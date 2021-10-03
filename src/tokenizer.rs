@@ -3,11 +3,13 @@ use nom::{
     bytes::complete::{tag, take_while_m_n},
     character::complete::{anychar, none_of, space0, space1},
     combinator::{eof, map_res, opt, peek, recognize},
+    error::{Error, ErrorKind, ParseError},
     multi::{count, many_till},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
 
+#[derive(Clone, Debug)]
 pub enum SearchToken<'a> {
     /// `AND`, `&&`, `,`
     And,
@@ -481,16 +483,62 @@ pub fn match_token<'a>(input: &'a str, token: &SearchToken) -> IResult<&'a str, 
 /// Like `match_token`, but recognizes more than one token.
 /// Returns `Ok((rest, [s]))` if all tokens match, otherwise `Err`.
 pub fn match_tokens<'a>(input: &'a str, tokens: &[SearchToken]) -> IResult<&'a str, Vec<&'a str>> {
-    let result = tokens.iter().try_fold(
+    tokens.iter().try_fold(
         (input, Vec::with_capacity(tokens.len())),
         |(input, mut v), t| {
             let (input, s) = match_token(input, t)?;
             v.push(s);
             Ok((input, v))
         },
-    );
+    )
+}
 
-    result
+/// Try to recognize an ordered sequence of `tokens` from `input`,
+/// considering alternatives in each list.
+///
+/// Like `match_tokens`, but considers multiple possible tokens
+/// at each step.
+pub fn match_alternatives<'a>(
+    input: &'a str,
+    tokens: &[&[SearchToken]],
+) -> IResult<&'a str, Vec<&'a str>> {
+    tokens.iter().try_fold(
+        (input, Vec::with_capacity(tokens.len())),
+        |(input, mut v), tokens| {
+            for t in *tokens {
+                if let Ok((input, s)) = match_token(input, t) {
+                    v.push(s);
+                    return Ok((input, v));
+                }
+            }
+
+            Err(nom::Err::Error(Error::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )))
+        },
+    )
+}
+
+/// Try to recognize an ordered sequence of `tokens` from `input.
+///
+/// Like `match_token`, but recognizes more than one token.
+/// Returns `(rest, [s])` with the number of tokens that matched.
+pub fn match_at_most<'a>(input: &'a str, tokens: &[SearchToken]) -> (&'a str, Vec<&'a str>) {
+    let mut input = input;
+    let mut output = Vec::with_capacity(tokens.len());
+
+    for t in tokens {
+        match match_token(input, t) {
+            Ok((new_input, t)) => {
+                input = new_input;
+                output.push(t);
+            }
+            Err(_) => break
+        }
+    }
+
+    (input, output)
 }
 
 #[cfg(test)]
@@ -795,5 +843,76 @@ mod tests {
         let result = match_tokens(input, &[SearchToken::Term, SearchToken::Eof]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_match_alternatives() {
+        let inputs = [
+            ("created_at.lt:2020", ".lt:"),
+            ("created_at.lte:2020", ".lte:"),
+            ("created_at.gt:2020", ".gt:"),
+            ("created_at.gte:2020", ".gte:"),
+            ("created_at:2020", ":"),
+        ];
+
+        for (input, expected) in inputs {
+            let (_, tokens) = match_alternatives(
+                input,
+                &[
+                    &[SearchToken::Field("created_at")],
+                    &[
+                        SearchToken::RangeLt,
+                        SearchToken::RangeLte,
+                        SearchToken::RangeGt,
+                        SearchToken::RangeGte,
+                        SearchToken::RangeEq,
+                    ],
+                    &[SearchToken::AbsoluteDate4Digit],
+                ],
+            )
+            .unwrap();
+
+            assert_eq!(tokens.len(), 3);
+            assert_eq!(tokens[0], "created_at");
+            assert_eq!(tokens[1], expected);
+            assert_eq!(tokens[2], "2020");
+        }
+
+        assert!(match_alternatives("1234", &[&[SearchToken::Boolean]]).is_err());
+    }
+
+    #[test]
+    fn test_match_at_most() {
+        let inputs = [
+            ("2020-01-01T00:00:00", vec!["2020", "-", "01", "-", "01", "T", "00", ":", "00", ":", "00"]),
+            ("2020-01-01T00:00", vec!["2020", "-", "01", "-", "01", "T", "00", ":", "00"]),
+            ("2020-01-01T00", vec!["2020", "-", "01", "-", "01", "T", "00"]),
+            ("2020-01-01T", vec!["2020", "-", "01", "-", "01", "T"]),
+            ("2020-01-01", vec!["2020", "-", "01", "-", "01"]),
+            ("2020-01", vec!["2020", "-", "01"]),
+            ("2020", vec!["2020"]),
+            ("2", vec![]),
+        ];
+
+        for (input, expected) in inputs {
+            let (_, tokens) = match_at_most(
+                input,
+                &[
+                    SearchToken::AbsoluteDate4Digit,
+                    SearchToken::AbsoluteDateHyphen,
+                    SearchToken::AbsoluteDate2Digit,
+                    SearchToken::AbsoluteDateHyphen,
+                    SearchToken::AbsoluteDate2Digit,
+                    SearchToken::AbsoluteDateTimeSep,
+                    SearchToken::AbsoluteDate2Digit,
+                    SearchToken::AbsoluteDateColon,
+                    SearchToken::AbsoluteDate2Digit,
+                    SearchToken::AbsoluteDateColon,
+                    SearchToken::AbsoluteDate2Digit
+                ]
+            );
+
+            assert_eq!(tokens, expected);
+        }
     }
 }
