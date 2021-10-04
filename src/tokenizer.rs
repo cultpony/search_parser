@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while_m_n},
-    character::complete::{anychar, none_of, space0, space1},
+    character::complete::{anychar, none_of, space0, space1, line_ending},
     combinator::{eof, map_res, opt, peek, recognize},
     error::{Error, ErrorKind, ParseError},
     multi::{count, many_till},
@@ -13,7 +13,7 @@ use nom::{
 pub enum SearchToken<'a> {
     /// `AND`, `&&`, `,`
     And,
-    /// `OR`, `||`
+    /// `OR`, `||`, `\n`, `\r\n`
     Or,
     /// `NOT`, `!`, `-`
     Not,
@@ -72,6 +72,8 @@ pub enum SearchToken<'a> {
     Term,
     /// A quoted term (see [quoted_term])
     QuotedTerm,
+    /// A comment; Any text following a `#`
+    Comment,
 }
 
 /// Returns whether the character is a decimal digit (0123456789).
@@ -83,6 +85,16 @@ pub fn is_dec_digit(c: char) -> bool {
 /// (0123456789abcdefABCDEF).
 pub fn is_hex_digit(c: char) -> bool {
     ('0'..='9').contains(&c) || ('a'..='f').contains(&c) || ('A'..='F').contains(&c)
+}
+
+/// Recognizes all text until newline.
+pub fn remainder_of_line(input: &str) -> IResult<&str, &str> {
+    recognize(many_till(none_of("\r\n"), alt((line_ending, eof))))(input)
+}
+
+/// Recognizes a comment.
+pub fn comment(input: &str) -> IResult<&str, &str> {
+    recognize(tuple((opt(space0), tag("#"), remainder_of_line)))(input)
 }
 
 /// Returns a parser which recognizes an integer having at least `min`
@@ -323,14 +335,18 @@ pub fn ip_cidr(input: &str) -> IResult<&str, &str> {
 /// Recognizes a conjunction operator, like `x AND y`, `x && y`, or `x, y`.
 pub fn and(input: &str) -> IResult<&str, &str> {
     alt((
-        delimited(space1, alt((tag("AND"), tag("&&"))), space1),
-        delimited(space0, tag(","), space0),
+        delimited(space1, tag("AND"), space1),
+        delimited(space0, alt((tag(","), tag("&&"))), space0),
     ))(input)
 }
 
 /// Recognizes a disjunction operator, like `x OR y` or `x || y`.
 pub fn or(input: &str) -> IResult<&str, &str> {
-    delimited(space1, alt((tag("OR"), tag("||"))), space1)(input)
+    alt((
+        delimited(space1, tag("OR"), space1),
+        delimited(space0, tag("||"), space0),
+        line_ending,
+    ))(input)
 }
 
 /// Recognizes a negation operator, like `!x`, `-x`, or `NOT x`.
@@ -425,6 +441,7 @@ pub fn quoted_term(input: &str) -> IResult<&str, &str> {
 /// Returns `Ok((rest, s))` if the token matches, otherwise returns `Err`.
 pub fn match_token<'a>(input: &'a str, token: &SearchToken) -> IResult<&'a str, &'a str> {
     match *token {
+        SearchToken::Comment => comment(input),
         SearchToken::And => and(input),
         SearchToken::Or => or(input),
         SearchToken::Not => not(input),

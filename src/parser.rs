@@ -127,7 +127,7 @@ impl Parser {
     /// Parse an OR expression.
     ///
     /// `or = and t_or top | and`
-    fn parse_or<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
+    pub fn parse_or<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
         let (left, input) = self.parse_and(input)?;
 
         if let Ok((input, _)) = match_token(input, &SearchToken::Or) {

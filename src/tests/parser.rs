@@ -46,3 +46,29 @@ fn test_parse_group() {
         Ok((json!({"term": {"tags": "foo (bar)"}}), ""))
     );
 }
+
+#[test]
+fn test_parse_or() {
+    // ||
+    assert_eq!(
+        parser().parse_or("foo || bar OR baz\nfaz"),
+        Ok((json!({
+            "bool": {
+                "should": [
+                    {"term": {"tags": "foo"}},
+                    {"bool": {
+                        "should": [
+                            {"term": {"tags": "bar"}},
+                            {"bool": {
+                                "should": [
+                                    {"term": {"tags": "baz"}},
+                                    {"term": {"tags": "faz"}}
+                                ]
+                            }}
+                        ]
+                    }}
+                ]
+            }
+        }), ""))
+    );
+}

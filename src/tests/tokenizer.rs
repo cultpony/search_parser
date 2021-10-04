@@ -116,25 +116,27 @@ fn test_and() {
     assert_eq!(and(" , "), Ok(("", ",")));
     assert_eq!(and(" ,"), Ok(("", ",")));
     assert_eq!(and(" && "), Ok(("", "&&")));
+    assert_eq!(and("&& "), Ok(("", "&&")));
+    assert_eq!(and(" &&"), Ok(("", "&&")));
+    assert_eq!(and("&&"), Ok(("", "&&")));
     assert_eq!(and(" AND "), Ok(("", "AND")));
     assert!(and(" AND").is_err());
     assert!(and("AND").is_err());
     assert!(and("AND ").is_err());
-    assert!(and(" &&").is_err());
-    assert!(and("&&").is_err());
-    assert!(and("&& ").is_err());
 }
 
 #[test]
 fn test_or() {
     assert_eq!(or(" OR "), Ok(("", "OR")));
     assert_eq!(or(" || "), Ok(("", "||")));
+    assert_eq!(or("||"), Ok(("", "||")));
+    assert_eq!(or("|| "), Ok(("", "||")));
+    assert_eq!(or(" ||"), Ok(("", "||")));
+    assert_eq!(or("\n"), Ok(("", "\n")));
+    assert_eq!(or("\r\n"), Ok(("", "\r\n")));
     assert!(or(" OR").is_err());
     assert!(or("OR").is_err());
     assert!(or("OR ").is_err());
-    assert!(or(" ||").is_err());
-    assert!(or("||").is_err());
-    assert!(or("|| ").is_err());
 }
 
 #[test]
@@ -381,4 +383,18 @@ fn test_match_at_most() {
 
         assert_eq!(&tokens, expected);
     }
+}
+
+#[test]
+fn test_remainder_of_line() {
+    assert_eq!(remainder_of_line("hello world 123\nnot part of it"), Ok(("not part of it", "hello world 123\n")));
+    assert_eq!(remainder_of_line("hello world 123\r\nnot part of it"), Ok(("not part of it", "hello world 123\r\n")));
+}
+
+#[test]
+fn test_comments() {
+    assert_eq!(comment("# hello world"), Ok(("", "# hello world")));
+    assert_eq!(comment(" # hello world"), Ok(("", " # hello world")));
+    assert_eq!(comment("# hello world\ntest"), Ok(("test", "# hello world\n")));
+    assert_eq!(comment("# hello world\r\ntest"), Ok(("test", "# hello world\r\n")));
 }
