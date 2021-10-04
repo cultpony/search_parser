@@ -855,7 +855,7 @@ mod tests {
             ("created_at:2020", ":"),
         ];
 
-        for (input, expected) in inputs {
+        for (input, expected) in inputs.iter() {
             let (_, tokens) = match_alternatives(
                 input,
                 &[
@@ -874,7 +874,7 @@ mod tests {
 
             assert_eq!(tokens.len(), 3);
             assert_eq!(tokens[0], "created_at");
-            assert_eq!(tokens[1], expected);
+            assert_eq!(&tokens[1], expected);
             assert_eq!(tokens[2], "2020");
         }
 
@@ -894,7 +894,7 @@ mod tests {
             ("2", vec![]),
         ];
 
-        for (input, expected) in inputs {
+        for (input, expected) in inputs.iter() {
             let (_, tokens) = match_at_most(
                 input,
                 &[
@@ -912,7 +912,7 @@ mod tests {
                 ]
             );
 
-            assert_eq!(tokens, expected);
+            assert_eq!(&tokens, expected);
         }
     }
 }
