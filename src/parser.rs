@@ -2,10 +2,10 @@
 #![allow(unused_imports)]
 
 use crate::tokenizer::*;
-use std::collections::{BTreeSet, BTreeMap};
-use chrono::{Duration, prelude::*};
+use chrono::{prelude::*, Duration};
+use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 /// Represents a parsing error.
 ///
@@ -13,9 +13,9 @@ use serde_json::{Map, Value, json};
 /// of execution. An invalid input error is fatal and entirely stops
 /// parsing, while no match may simply allow a rule to fall through.
 #[derive(Debug, Eq, PartialEq)]
-enum ParseError {
+pub enum ParseError {
     NoMatch,
-    InvalidInput(String)
+    InvalidInput(String),
 }
 
 /// Represents the result of execution of a parser.
@@ -57,9 +57,7 @@ const RANGES: [SearchToken; 5] = [
 ];
 
 /// The equality range field: `:`
-const RANGE_EQ: [SearchToken; 1] = [
-    SearchToken::RangeEq
-];
+const RANGE_EQ: [SearchToken; 1] = [SearchToken::RangeEq];
 
 /// The components of an RFC3339 absolute date fragment
 /// (naive, not including timezone):
@@ -75,21 +73,19 @@ const ABS_DATE_FRAG: [SearchToken; 11] = [
     SearchToken::AbsoluteDateColon,
     SearchToken::AbsoluteDate2Digit,
     SearchToken::AbsoluteDateColon,
-    SearchToken::AbsoluteDate2Digit
+    SearchToken::AbsoluteDate2Digit,
 ];
 
 /// The components of an RFC3339 offset component:
 /// `Z` (zulu) or `+HH:MM` or `-HH:MM`
 const ABS_DATE_OFFSET: [&[SearchToken]; 2] = [
-    &[
-        SearchToken::AbsoluteDateZulu
-    ],
+    &[SearchToken::AbsoluteDateZulu],
     &[
         SearchToken::AbsoluteDateOffsetDirection,
         SearchToken::AbsoluteDate2Digit,
         SearchToken::AbsoluteDateColon,
-        SearchToken::AbsoluteDate2Digit
-    ]
+        SearchToken::AbsoluteDate2Digit,
+    ],
 ];
 
 /// The components of a relative date:
@@ -97,12 +93,15 @@ const ABS_DATE_OFFSET: [&[SearchToken]; 2] = [
 const REL_DATE: [SearchToken; 3] = [
     SearchToken::Integer,
     SearchToken::RelativeDateMultiplier,
-    SearchToken::RelativeDateDirection
+    SearchToken::RelativeDateDirection,
 ];
 
 impl Parser {
     pub fn new(default_field: String) -> Parser {
-        Parser { default_field, ..Default::default() }
+        Parser {
+            default_field,
+            ..Default::default()
+        }
     }
 
     /// Parse the given search query into a JSON value, suitable for delivery
@@ -113,7 +112,7 @@ impl Parser {
     pub fn parse(&mut self, input: &str) -> Result<Value, String> {
         match self.parse_top(input) {
             Ok((v, _)) => Ok(v),
-            Err(_) => Err("Parse error".to_string())
+            Err(_) => Err("Parse error".to_string()),
         }
     }
 
@@ -165,8 +164,13 @@ impl Parser {
             let boost_val = boost[1].parse::<f32>().unwrap_or(0.0);
 
             match boost_val >= 0.0 {
-                true => Ok((json!({"function_score": {"query": child, "boost": boost[1]}}), input)),
-                false => Err(ParseError::InvalidInput("Boost values must be non-negative".to_string()))
+                true => Ok((
+                    json!({"function_score": {"query": child, "boost": boost[1]}}),
+                    input,
+                )),
+                false => Err(ParseError::InvalidInput(
+                    "Boost values must be non-negative".to_string(),
+                )),
             }
         } else {
             Ok((child, input))
@@ -189,14 +193,16 @@ impl Parser {
     /// Parse a grouping expression.
     ///
     /// `group = t_lparen top t_rparen | term`
-    fn parse_group<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
+    pub fn parse_group<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
         if let Ok((input, _)) = match_token(input, &SearchToken::Lparen) {
             let (child, input) = self.parse_top(input)?;
 
             if let Ok((input, _)) = match_token(input, &SearchToken::Rparen) {
                 Ok((child, input))
             } else {
-                Err(ParseError::InvalidInput("Imbalanced parentheses".to_string()))
+                Err(ParseError::InvalidInput(
+                    "Imbalanced parentheses".to_string(),
+                ))
             }
         } else {
             self.parse_term(input)
@@ -206,7 +212,7 @@ impl Parser {
     /// Parse a term expression.
     ///
     /// ```txt
-    /// 
+    ///
     /// term =
     ///   t_quot non_wildcardable t_quot |
     ///   t_quot literal_field range_eq t_qterm (t_fuzz t_float)? t_quot |
@@ -216,9 +222,19 @@ impl Parser {
     ///   non_wildcardable |
     ///   t_term (t_fuzz t_float)?;
     /// ```
-    fn parse_term<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        if let Ok((input, term)) = match_tokens(input, &[SearchToken::Quote, SearchToken::QuotedTerm, SearchToken::Quote]) {
-            Ok((json!({"term": {self.default_field.clone(): term[1]}}), input))
+    pub fn parse_term<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
+        if let Ok((input, term)) = match_tokens(
+            input,
+            &[
+                SearchToken::Quote,
+                SearchToken::QuotedTerm,
+                SearchToken::Quote,
+            ],
+        ) {
+            Ok((
+                json!({"term": {self.default_field.clone(): term[1]}}),
+                input,
+            ))
         } else if let Ok((input, term)) = match_token(input, &SearchToken::Term) {
             Ok((json!({"term": {self.default_field.clone(): term}}), input))
         } else {
@@ -230,10 +246,13 @@ impl Parser {
     ///
     /// `bool = bool_field range_eq t_bool | ip`
     fn parse_bool<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        if let Ok((input, field)) = match_alternatives(input, &[&fields(self.bool_fields.iter()), &RANGE_EQ]) {
-            let (input, value) = match_token(input, &SearchToken::Boolean).map_err(|_| ParseError::InvalidInput("Expected a boolean".to_string()))?;
+        if let Ok((input, field)) =
+            match_alternatives(input, &[&fields(self.bool_fields.iter()), &RANGE_EQ])
+        {
+            let (input, value) = match_token(input, &SearchToken::Boolean)
+                .map_err(|_| ParseError::InvalidInput("Expected a boolean".to_string()))?;
 
-            return Ok((json!({"term": {field[0]: value}}), input))
+            return Ok((json!({"term": {field[0]: value}}), input));
         }
 
         self.parse_ip(input)
@@ -243,10 +262,13 @@ impl Parser {
     ///
     /// `ip = ip_field range_eq t_ip | int`
     fn parse_ip<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        if let Ok((input, field)) = match_alternatives(input, &[&fields(self.ip_fields.iter()), &RANGE_EQ]) {
-            let (input, value) = match_token(input, &SearchToken::IpCidr).map_err(|_| ParseError::InvalidInput("Expected an IP address".to_string()))?;
+        if let Ok((input, field)) =
+            match_alternatives(input, &[&fields(self.ip_fields.iter()), &RANGE_EQ])
+        {
+            let (input, value) = match_token(input, &SearchToken::IpCidr)
+                .map_err(|_| ParseError::InvalidInput("Expected an IP address".to_string()))?;
 
-            return Ok((json!({"term": {field[0]: value}}), input))
+            return Ok((json!({"term": {field[0]: value}}), input));
         }
 
         self.parse_int(input)
@@ -256,23 +278,32 @@ impl Parser {
     ///
     /// `int = int_field a_range t_int (t_fuzz t_int)? | float`
     fn parse_int<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        if let Ok((input, field)) = match_alternatives(input, &[&fields(self.int_fields.iter()), &RANGES]) {
-            let (input, value) = match_token(input, &SearchToken::Integer).map_err(|_| ParseError::InvalidInput("Expected an integer".to_string()))?;
+        if let Ok((input, field)) =
+            match_alternatives(input, &[&fields(self.int_fields.iter()), &RANGES])
+        {
+            let (input, value) = match_token(input, &SearchToken::Integer)
+                .map_err(|_| ParseError::InvalidInput("Expected an integer".to_string()))?;
             let value = value.parse::<i32>().unwrap_or(0);
-            
+
             // Handle fuzzing expressions
             if let Ok((input, _)) = match_token(input, &SearchToken::Fuzz) {
-                let (input, fuzz) = match_token(input, &SearchToken::Integer).map_err(|_| ParseError::InvalidInput("Expected an integer".to_string()))?;
+                let (input, fuzz) = match_token(input, &SearchToken::Integer)
+                    .map_err(|_| ParseError::InvalidInput("Expected an integer".to_string()))?;
                 let fuzz = fuzz.parse::<i32>().unwrap_or(0).abs();
 
                 return match field[1] {
-                    ":" => Ok((json!({"range": {field[0]: {"gte": value - fuzz, "lte": value + fuzz}}}), input)),
-                    _ => Err(ParseError::InvalidInput("Multiple ranges specified".to_string()))
-                }
+                    ":" => Ok((
+                        json!({"range": {field[0]: {"gte": value - fuzz, "lte": value + fuzz}}}),
+                        input,
+                    )),
+                    _ => Err(ParseError::InvalidInput(
+                        "Multiple ranges specified".to_string(),
+                    )),
+                };
             }
 
             // Everything else
-            return Ok((term_range(field[0], field[1], value), input))
+            return Ok((term_range(field[0], field[1], value), input));
         }
 
         self.parse_float(input)
@@ -282,23 +313,32 @@ impl Parser {
     ///
     /// `float = float_field a_range t_float (t_fuzz t_float)? | date`
     fn parse_float<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        if let Ok((input, field)) = match_alternatives(input, &[&fields(self.float_fields.iter()), &RANGES]) {
-            let (input, value) = match_token(input, &SearchToken::Float).map_err(|_| ParseError::InvalidInput("Expected a float".to_string()))?;
+        if let Ok((input, field)) =
+            match_alternatives(input, &[&fields(self.float_fields.iter()), &RANGES])
+        {
+            let (input, value) = match_token(input, &SearchToken::Float)
+                .map_err(|_| ParseError::InvalidInput("Expected a float".to_string()))?;
             let value = value.parse::<f32>().unwrap_or(0.0);
-            
+
             // Handle fuzzing expressions
             if let Ok((input, _)) = match_token(input, &SearchToken::Fuzz) {
-                let (input, fuzz) = match_token(input, &SearchToken::Float).map_err(|_| ParseError::InvalidInput("Expected a float".to_string()))?;
+                let (input, fuzz) = match_token(input, &SearchToken::Float)
+                    .map_err(|_| ParseError::InvalidInput("Expected a float".to_string()))?;
                 let fuzz = fuzz.parse::<f32>().unwrap_or(0.0).abs();
 
                 return match field[1] {
-                    ":" => Ok((json!({"range": {field[0]: {"gte": value - fuzz, "lte": value + fuzz}}}), input)),
-                    _ => Err(ParseError::InvalidInput("Multiple ranges specified".to_string()))
-                }
+                    ":" => Ok((
+                        json!({"range": {field[0]: {"gte": value - fuzz, "lte": value + fuzz}}}),
+                        input,
+                    )),
+                    _ => Err(ParseError::InvalidInput(
+                        "Multiple ranges specified".to_string(),
+                    )),
+                };
             }
 
             // Everything else
-            return Ok((term_range(field[0], field[1], value), input))
+            return Ok((term_range(field[0], field[1], value), input));
         }
 
         self.parse_date(input)
@@ -308,11 +348,13 @@ impl Parser {
     ///
     /// `date = date_field a_range (relative_date | absolute_date)`
     fn parse_date<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        if let Ok((input, field)) = match_alternatives(input, &[&fields(self.date_fields.iter()), &RANGES]) {
+        if let Ok((input, field)) =
+            match_alternatives(input, &[&fields(self.date_fields.iter()), &RANGES])
+        {
             return match self.parse_relative_date(input, field[0], field[1]) {
                 Ok(r) => Ok(r),
-                Err(_) => self.parse_absolute_date(input, field[0], field[1])
-            }
+                Err(_) => self.parse_absolute_date(input, field[0], field[1]),
+            };
         }
 
         Err(ParseError::NoMatch)
@@ -321,20 +363,28 @@ impl Parser {
     /// Parse a relative date expression.
     ///
     /// `relative_date = t_int t_multiplier t_direction`
-    fn parse_relative_date<'a>(&mut self, input: &'a str, field: &'a str, range: &'a str) -> ParseResult<'a> {
+    fn parse_relative_date<'a>(
+        &mut self,
+        input: &'a str,
+        field: &'a str,
+        range: &'a str,
+    ) -> ParseResult<'a> {
         if let Ok((input, values)) = match_tokens(input, &REL_DATE) {
             let amount = values[0].parse::<i64>().unwrap_or(0);
             let multiplier = offset_multiplier(values[1]);
             let direction = offset_direction(values[2]);
 
             let now = Utc::now();
-            let lower = (now + Duration::seconds(((amount * direction) + 1) * multiplier)).to_rfc3339();
+            let lower =
+                (now + Duration::seconds(((amount * direction) + 1) * multiplier)).to_rfc3339();
             let upper = (now + Duration::seconds((amount * direction) * multiplier)).to_rfc3339();
 
-            return Ok((date_range(field, range, lower, upper), input))
+            return Ok((date_range(field, range, lower, upper), input));
         }
 
-        Err(ParseError::InvalidInput("Expected a relative date".to_string()))
+        Err(ParseError::InvalidInput(
+            "Expected a relative date".to_string(),
+        ))
     }
 
     /// Parse an absolute date expression.
@@ -344,15 +394,23 @@ impl Parser {
     /// `rfc3339_date_frag = t_year (t_hyphen t_month (t_hyphen t_day rfc3339_time_frag?)?)?`
     ///
     /// `absolute_date = rfc3339_date_frag rfc3339_offset_frag?`
-    fn parse_absolute_date<'a>(&mut self, input: &'a str, field: &'a str, range: &'a str) -> ParseResult<'a> {
+    fn parse_absolute_date<'a>(
+        &mut self,
+        input: &'a str,
+        field: &'a str,
+        range: &'a str,
+    ) -> ParseResult<'a> {
         let (input, time) = match_at_most(input, &ABS_DATE_FRAG);
         let (input, tz) = match_alternatives(input, &ABS_DATE_OFFSET).unwrap_or((input, vec![]));
 
         if time.is_empty() {
-            return Err(ParseError::InvalidInput("Expected an absolute date".to_string()))
+            return Err(ParseError::InvalidInput(
+                "Expected an absolute date".to_string(),
+            ));
         }
 
-        let (lower, upper) = date_fragment_to_naive(time).ok_or_else(|| ParseError::InvalidInput("Expected an absolute date".to_string()))?;
+        let (lower, upper) = date_fragment_to_naive(time)
+            .ok_or_else(|| ParseError::InvalidInput("Expected an absolute date".to_string()))?;
         let offset = offset_fragment_to_fixed(tz);
 
         let lower = DateTime::<FixedOffset>::from_utc(lower, offset).to_rfc3339();
@@ -364,19 +422,25 @@ impl Parser {
 
 /// Converts a list of string fields into a form which can be passed to
 /// [match_tokens] or [match_alternatives].
-fn fields<'a, 'b: 'a, I>(fs: I) -> Vec<SearchToken<'a>> where I: Iterator<Item = &'b String> {
+fn fields<'a, 'b: 'a, I>(fs: I) -> Vec<SearchToken<'a>>
+where
+    I: Iterator<Item = &'b String>,
+{
     fs.map(|f| SearchToken::Field(f)).collect()
 }
 
 /// Creates an Elasticsearch JSON term range leaf from a field, range literal,
 /// and serializable value.
-fn term_range<T>(field: &str, range: &str, value: T) -> Value where T: serde::ser::Serialize {
+fn term_range<T>(field: &str, range: &str, value: T) -> Value
+where
+    T: serde::ser::Serialize,
+{
     match range {
         ".lt:" => json!({"range": {field: {"lt": value}}}),
         ".lte:" => json!({"range": {field: {"lte": value}}}),
         ".gt:" => json!({"range": {field: {"gt": value}}}),
         ".gte:" => json!({"range": {field: {"gte": value}}}),
-        _ => json!({"term": {field: value}})
+        _ => json!({"term": {field: value}}),
     }
 }
 
@@ -385,7 +449,10 @@ fn term_range<T>(field: &str, range: &str, value: T) -> Value where T: serde::se
 ///
 /// Note that there is some potentially counterintuitive range behavior due to
 /// https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-range-query.html#ranges-on-dates.
-fn date_range<T>(field: &str, range: &str, lower: T, upper: T) -> Value where T: serde::ser::Serialize {
+fn date_range<T>(field: &str, range: &str, lower: T, upper: T) -> Value
+where
+    T: serde::ser::Serialize,
+{
     match range {
         ".lt:" => json!({"range": {field: {"lt": lower}}}),
         ".lte:" => json!({"range": {field: {"lte": upper}}}),
@@ -402,12 +469,12 @@ fn date_range<T>(field: &str, range: &str, lower: T, upper: T) -> Value where T:
 fn offset_multiplier(s: &str) -> i64 {
     match s {
         "minute" | "minutes" => 60,
-        "hour" | "hours" => 60*60,
-        "day" | "days" => 60*60*24,
-        "week" | "weeks" => 60*60*24*7,
-        "month" | "months" => 60*60*24*7*30,
-        "year" | "years" => 60*60*24*365,
-        _ => 1
+        "hour" | "hours" => 60 * 60,
+        "day" | "days" => 60 * 60 * 24,
+        "week" | "weeks" => 60 * 60 * 24 * 7,
+        "month" | "months" => 60 * 60 * 24 * 7 * 30,
+        "year" | "years" => 60 * 60 * 24 * 365,
+        _ => 1,
     }
 }
 
@@ -418,7 +485,7 @@ fn offset_multiplier(s: &str) -> i64 {
 fn offset_direction(s: &str) -> i64 {
     match s {
         "from now" => 1,
-        _ => -1
+        _ => -1,
     }
 }
 
@@ -429,8 +496,8 @@ fn date_token_filter((i, s): (usize, &str)) -> Option<usize> {
     //     ^  ^  ^  ^  ^
     //     1  3  5  7  9
     match i {
-        1|3|5|7|9 => None,
-        _ => Some(s.parse::<usize>().unwrap_or(0))
+        1 | 3 | 5 | 7 | 9 => None,
+        _ => Some(s.parse::<usize>().unwrap_or(0)),
     }
 }
 
@@ -438,7 +505,11 @@ fn date_token_filter((i, s): (usize, &str)) -> Option<usize> {
 /// range between lower and upper bounds.
 fn date_fragment_to_naive(fragment: Vec<&str>) -> Option<(NaiveDateTime, NaiveDateTime)> {
     let mut ymdhms = [0, 1, 1, 0, 0, 0];
-    let fragment: Vec<usize> = fragment.into_iter().enumerate().filter_map(date_token_filter).collect();
+    let fragment: Vec<usize> = fragment
+        .into_iter()
+        .enumerate()
+        .filter_map(date_token_filter)
+        .collect();
 
     // Create date array
     for (i, d) in fragment.iter().enumerate().take(6) {
@@ -452,11 +523,13 @@ fn date_fragment_to_naive(fragment: Vec<&str>) -> Option<(NaiveDateTime, NaiveDa
         3 => Duration::days(7),
         4 => Duration::hours(24),
         5 => Duration::minutes(60),
-        _ => Duration::seconds(1)
+        _ => Duration::seconds(1),
     };
 
-    let lower = Utc.ymd_opt(ymdhms[0] as i32, ymdhms[1], ymdhms[2])
-                                .and_hms_opt(ymdhms[3], ymdhms[4], ymdhms[5]).single()?;
+    let lower = Utc
+        .ymd_opt(ymdhms[0] as i32, ymdhms[1], ymdhms[2])
+        .and_hms_opt(ymdhms[3], ymdhms[4], ymdhms[5])
+        .single()?;
     let upper = lower + offset;
 
     Some((lower.naive_utc(), upper.naive_utc()))
@@ -466,7 +539,7 @@ fn date_fragment_to_naive(fragment: Vec<&str>) -> Option<(NaiveDateTime, NaiveDa
 fn offset_fragment_to_fixed(fragment: Vec<&str>) -> FixedOffset {
     // Offset length is 1 -> Zulu (UTC)
     if fragment.len() == 1 {
-        return FixedOffset::east(0)
+        return FixedOffset::east(0);
     }
 
     // Otherwise some offset exists
@@ -475,37 +548,4 @@ fn offset_fragment_to_fixed(fragment: Vec<&str>) -> FixedOffset {
     let minutes = fragment[3].parse::<i32>().unwrap_or(0);
 
     FixedOffset::east(sign * ((hours * 60) + minutes))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn parser() -> Parser {
-        Parser::new("tags".into())
-    }
-
-    #[test]
-    fn test_parse_term() {
-        // Unquoted terms
-        assert_eq!(parser().parse_term("foo"), Ok((json!({"term": {"tags": "foo"}}), "")));
-
-        // Quoted terms
-        assert_eq!(parser().parse_term("\"(foo)\""), Ok((json!({"term": {"tags": "(foo)"}}), "")));
-
-        // Errors
-        assert!(parser().parse_term(")").is_err())
-    }
-
-    #[test]
-    fn test_parse_group() {
-        // No additional nesting
-        assert_eq!(parser().parse_group("foo"), Ok((json!({"term": {"tags": "foo"}}), "")));
-        assert_eq!(parser().parse_group("(foo)"), Ok((json!({"term": {"tags": "foo"}}), "")));
-        assert_eq!(parser().parse_group("((foo))"), Ok((json!({"term": {"tags": "foo"}}), "")));
-
-        // Terms with subexpressions
-        assert_eq!(parser().parse_group("(foo (bar))"), Ok((json!({"term": {"tags": "foo (bar)"}}), "")));
-    }
 }
