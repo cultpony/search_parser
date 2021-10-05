@@ -1,6 +1,6 @@
 #[cfg(test)]
-use crate::parser::*;
 use serde_json::json;
+use crate::parser::*;
 
 fn parser() -> Parser {
     Parser::new("tags".into())

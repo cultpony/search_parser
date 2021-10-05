@@ -110,9 +110,37 @@ impl Parser {
     /// Returns either the encoded JSON value or a string error with an
     /// explanation for why parsing failed.
     pub fn parse(&mut self, input: &str) -> Result<Value, String> {
-        match self.parse_top(input) {
+        match self.parse_lines(input) {
             Ok((v, _)) => Ok(v),
             Err(_) => Err("Parse error".to_string()),
+        }
+    }
+
+    /// Parse any number of lines (treated as a disjunction between them).
+    ///
+    /// `lines = (top t_nl)*`
+    pub fn parse_lines<'a>(&mut self, mut input: &'a str) -> ParseResult<'a> {
+        let mut clauses: Vec<Value> = vec![];
+
+        loop {
+            if let Ok((left, rest)) = self.parse_top(input) {
+                clauses.push(left);
+                input = rest;
+            } else if let Ok((rest, _)) = match_token(input, &SearchToken::Newline) {
+                input = rest;
+            } else {
+                break;
+            }
+        }
+
+        match_token(input, &SearchToken::Eof).map_err(|_| {
+            ParseError::InvalidInput("Junk at end of expression".to_string())
+        })?;
+
+        match clauses.len() {
+            0 => Ok((json!({"match_none": {}}), input)),
+            1 => Ok((clauses.remove(0), input)),
+            _ => Ok((json!({"bool": {"should": clauses}}), input))
         }
     }
 
@@ -121,22 +149,7 @@ impl Parser {
     ///
     /// `top = or`
     pub fn parse_top<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        self.parse_newline(input)
-    }
-
-    /// Parse a line ending (treated as OR).
-    ///
-    /// `newline = or \n top | or`
-    pub fn parse_newline<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        let (left, input) = self.parse_or(input)?;
-
-        if let Ok((input, _)) = match_token(input, &SearchToken::Newline) {
-            let (right, input) = self.parse_top(input)?;
-
-            Ok((json!({"bool": {"should": [left, right]}}), input))
-        } else {
-            Ok((left, input))
-        }
+        self.parse_or(input)
     }
 
     /// Parse an OR expression.
