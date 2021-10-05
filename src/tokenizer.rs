@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while_m_n},
-    character::complete::{anychar, none_of, space0, space1, line_ending},
+    character::complete::{anychar, line_ending, none_of, space0, space1},
     combinator::{eof, map_res, opt, peek, recognize},
     error::{Error, ErrorKind, ParseError},
     multi::{count, many_till},
@@ -13,7 +13,7 @@ use nom::{
 pub enum SearchToken<'a> {
     /// `AND`, `&&`, `,`
     And,
-    /// `OR`, `||`, `\n`, `\r\n`
+    /// `OR`, `||`
     Or,
     /// `NOT`, `!`, `-`
     Not,
@@ -72,8 +72,8 @@ pub enum SearchToken<'a> {
     Term,
     /// A quoted term (see [quoted_term])
     QuotedTerm,
-    /// A comment; Any text following a `#`
-    Comment,
+    /// A line ending. LF or CRLF.
+    Newline,
 }
 
 /// Returns whether the character is a decimal digit (0123456789).
@@ -95,6 +95,11 @@ pub fn remainder_of_line(input: &str) -> IResult<&str, &str> {
 /// Recognizes a comment.
 pub fn comment(input: &str) -> IResult<&str, &str> {
     recognize(tuple((opt(space0), tag("#"), remainder_of_line)))(input)
+}
+
+/// Recognizes an empty line.
+pub fn empty_line(input: &str) -> IResult<&str, &str> {
+    recognize(tuple((line_ending, space0, line_ending)))(input)
 }
 
 /// Returns a parser which recognizes an integer having at least `min`
@@ -345,8 +350,12 @@ pub fn or(input: &str) -> IResult<&str, &str> {
     alt((
         delimited(space1, tag("OR"), space1),
         delimited(space0, tag("||"), space0),
-        line_ending,
     ))(input)
+}
+
+// Recognizes a newline.
+pub fn newline(input: &str) -> IResult<&str, &str> {
+    delimited(space0, line_ending, space0)(input)
 }
 
 /// Recognizes a negation operator, like `!x`, `-x`, or `NOT x`.
@@ -360,10 +369,12 @@ pub fn not(input: &str) -> IResult<&str, &str> {
 /// Recognizes the stop words which delimit unquoted terms. These are:
 /// - conjunction (`x,`, `x AND `, `x && `)
 /// - disjunction (`x || `, `x OR `)
+/// - line ending (`\n`, `\r\n`)
+/// - comment (`#`)
 /// - closing parenthesis (`x)`)
 /// - end of input
 pub fn stop_words(input: &str) -> IResult<&str, &str> {
-    alt((and, or, preceded(space0, tag(")")), eof))(input)
+    alt((and, or, newline, comment, preceded(space0, tag(")")), eof))(input)
 }
 
 /// Recognizes the full sequence of tokens which delimit unquoted terms.
@@ -436,14 +447,45 @@ pub fn quoted_term(input: &str) -> IResult<&str, &str> {
     )(input)
 }
 
+/// Matches two newlines directly after each other,
+/// optionally with spaces in-between them.
+fn match_empty_line(input: &str) -> Option<&str> {
+    match empty_line(input) {
+        Ok((remainder, _)) => Some(remainder),
+        _ => None,
+    }
+}
+
+/// Matches comments.
+fn match_comments(input: &str) -> Option<&str> {
+    match comment(input) {
+        Ok((remainder, _)) => Some(remainder),
+        _ => match_empty_line(input),
+    }
+}
+
+/// Strips the immediate comments and empty lines
+/// from the input.
+fn strip_comments(input: &str) -> &str {
+    let mut buf = input;
+
+    while let Some(remainder) = match_comments(buf) {
+        buf = remainder;
+    }
+
+    buf
+}
+
 /// Try to recognize a token of the given type at the beginning of `input`.
 ///
 /// Returns `Ok((rest, s))` if the token matches, otherwise returns `Err`.
 pub fn match_token<'a>(input: &'a str, token: &SearchToken) -> IResult<&'a str, &'a str> {
-    match *token {
-        SearchToken::Comment => comment(input),
+    let input = strip_comments(input);
+
+    let result = match *token {
         SearchToken::And => and(input),
         SearchToken::Or => or(input),
+        SearchToken::Newline => newline(input),
         SearchToken::Not => not(input),
         SearchToken::Lparen => delimited(space0, tag("("), space0)(input),
         SearchToken::Rparen => delimited(space0, tag(")"), space0)(input),
@@ -492,6 +534,11 @@ pub fn match_token<'a>(input: &'a str, token: &SearchToken) -> IResult<&'a str, 
         SearchToken::Eof => eof(input),
         SearchToken::Term => term(input),
         SearchToken::QuotedTerm => quoted_term(input),
+    };
+
+    match result {
+        Ok((input, term)) => Ok((strip_comments(input), strip_comments(term))),
+        _ => result,
     }
 }
 

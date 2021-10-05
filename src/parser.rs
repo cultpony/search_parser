@@ -120,8 +120,23 @@ impl Parser {
     /// rule in case it needs to be changed (in this case it is [Parser::parse_or]).
     ///
     /// `top = or`
-    fn parse_top<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
-        self.parse_or(input)
+    pub fn parse_top<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
+        self.parse_newline(input)
+    }
+
+    /// Parse a line ending (treated as OR).
+    ///
+    /// `newline = or \n top | or`
+    pub fn parse_newline<'a>(&mut self, input: &'a str) -> ParseResult<'a> {
+        let (left, input) = self.parse_or(input)?;
+
+        if let Ok((input, _)) = match_token(input, &SearchToken::Newline) {
+            let (right, input) = self.parse_top(input)?;
+
+            Ok((json!({"bool": {"should": [left, right]}}), input))
+        } else {
+            Ok((left, input))
+        }
     }
 
     /// Parse an OR expression.

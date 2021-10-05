@@ -49,11 +49,10 @@ fn test_parse_group() {
 
 #[test]
 fn test_parse_or() {
-    // ||
     assert_eq!(
-        parser().parse_or("foo || bar OR baz\nfaz"),
-        Ok((json!({
-            "bool": {
+        parser().parse_top("foo || bar OR baz\nfaz"),
+        Ok((
+            json!({"bool": {
                 "should": [
                     {"term": {"tags": "foo"}},
                     {"bool": {
@@ -68,7 +67,37 @@ fn test_parse_or() {
                         ]
                     }}
                 ]
-            }
-        }), ""))
+            }}),
+            ""
+        ))
+    );
+}
+
+#[test]
+fn test_comments() {
+    assert_eq!(
+        parser().parse_top("# some comment\nfoo, bar"),
+        Ok((
+            json!({"bool": {
+                "must": [
+                    {"term": {"tags": "foo"}},
+                    {"term": {"tags": "bar"}},
+                ]
+            }}),
+            ""
+        ))
+    );
+
+    assert_eq!(
+        parser().parse_top("foo, bar # some comment"),
+        Ok((
+            json!({"bool": {
+                "must": [
+                    {"term": {"tags": "foo"}},
+                    {"term": {"tags": "bar"}},
+                ]
+            }}),
+            ""
+        ))
     );
 }
