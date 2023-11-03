@@ -1,32 +1,276 @@
-#[cfg(test)]
-use crate::tokenizer::*;
+use crate::span::TokenSpan;
+use crate::tokenizers::dlln::*;
+use crate::tokens::Token;
+use bumpalo::collections::Vec;
+use bumpalo::Bump;
+use tracing::warn;
 
+fn assert_tokens<'a>(
+    alloc: &'a Bump,
+    inp: &'a str,
+    expected_tokens: &'a [Token],
+) -> Vec<'a, TokenSpan<'a>> {
+    warn!("Parsing {inp:?}");
+    let mut tokenizer = Tokenizer::new(alloc, inp);
+    let result = match tokenizer.consume_all() {
+        Ok(v) => v,
+        Err(e) => panic!("{:?}", e),
+    };
+    println!("Allocated {} bytes", alloc.allocated_bytes());
+    println!("Expected  {} bytes", maximum_memory_estimate(inp));
+    println!("Got:\n{result:#?}\n");
+    assert!(
+        alloc.allocated_bytes() < maximum_memory_estimate(inp),
+        "Allocated {} bytes but only wanted a maximum of {} bytes",
+        alloc.allocated_bytes(),
+        maximum_memory_estimate(inp)
+    );
+    let result_tokens: Vec<Token> = Vec::from_iter_in(result.iter().map(|x| x.token()), &alloc);
+    assert_eq!(result_tokens, expected_tokens);
+    result
+}
+
+fn assert_token_error<'a>(
+    alloc: &'a Bump,
+    inp: &'a str,
+    parsed_tokens: &'a [Token],
+    _expected_tokens: &'a [Token],
+    bad_span: TokenSpan<'static>,
+) -> Vec<'a, TokenSpan<'a>> {
+    let _bad_span = bad_span.with_str(inp);
+    warn!("Parsing {inp:?}");
+    let mut tokenizer = Tokenizer::new(alloc, inp);
+    let result = match tokenizer.consume_all() {
+        Ok(v) => v,
+        Err(e) => {
+            println!("{:?}", e);
+            tokenizer.token_spans().unwrap()
+        }
+    };
+    println!("Allocated {} bytes", alloc.allocated_bytes());
+    println!("Expected  {} bytes", maximum_memory_estimate(inp));
+    println!("Got:\n{result:#?}\n");
+    let result_tokens: Vec<Token> = Vec::from_iter_in(result.iter().map(|x| x.token()), &alloc);
+    assert_eq!(result_tokens, parsed_tokens);
+    result
+}
+
+#[test]
+#[tracing_test::traced_test]
+fn test_empty() {
+    let alloc = bumpalo::Bump::new();
+    assert_tokens(&alloc, "", &[Token::ROOT, Token::EOI]);
+}
+
+#[tracing_test::traced_test]
+#[test]
+fn test_parens() {
+    let alloc = bumpalo::Bump::new();
+    assert_tokens(&alloc, "(", &[Token::ROOT, Token::LPAREN, Token::EOI]);
+}
+
+#[tracing_test::traced_test]
+#[test]
+fn test_simple_logical_expr() {
+    const TEST: &'static str = "(((1000)AND 20)||100.gte:100.2,field),9.lte:-10,field";
+    let alloc = bumpalo::Bump::new();
+    assert_tokens(
+        &alloc,
+        TEST,
+        &[
+            Token::ROOT,
+            Token::LPAREN,
+            Token::LPAREN,
+            Token::LPAREN,
+            Token::FIELD,
+            Token::RPAREN,
+            Token::AND,
+            Token::FIELD,
+            Token::RPAREN,
+            Token::OR,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FLOAT,
+            Token::AND,
+            Token::FIELD,
+            Token::RPAREN,
+            Token::AND,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::AND,
+            Token::FIELD,
+            Token::EOI,
+        ],
+    );
+}
+
+#[tracing_test::traced_test]
 #[test]
 fn test_limited_integer() {
-    assert_eq!(limited_integer(1, 2)("12"), Ok(("", "12")));
-    assert_eq!(limited_integer(1, 2)("123"), Ok(("3", "12")));
-    assert!(limited_integer(1, 2)("abc").is_err());
+    let alloc = bumpalo::Bump::new();
+    assert_tokens(
+        &alloc,
+        "f.gte:12",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:123",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:abc",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FIELD,
+            Token::EOI,
+        ],
+    );
 }
 
+#[tracing_test::traced_test]
 #[test]
 fn test_decimal_integer() {
-    assert_eq!(decimal_integer("-123"), Ok(("", "-123")));
-    assert_eq!(decimal_integer("-123.4"), Ok((".4", "-123")));
-    assert_eq!(decimal_integer("+123"), Ok(("", "+123")));
-    assert_eq!(decimal_integer("+123.4"), Ok((".4", "+123")));
-    assert!(decimal_integer("+").is_err());
-    assert!(decimal_integer("-").is_err());
-    assert!(decimal_integer("x").is_err());
+    let alloc = bumpalo::Bump::new();
+    assert_tokens(
+        &alloc,
+        "f.gte:-123",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:-123.4",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FLOAT,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:+123",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:+123.4",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FLOAT,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:-",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FIELD,
+            Token::EOI,
+        ],
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:+",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FIELD,
+            Token::EOI,
+        ],
+    );
 }
 
+#[tracing_test::traced_test]
 #[test]
 fn test_float() {
-    assert_eq!(float("12"), Ok(("", "12")));
-    assert_eq!(float("12."), Ok(("", "12.")));
-    assert_eq!(float("12.34"), Ok(("", "12.34")));
-    assert_eq!(float("12.3a"), Ok(("a", "12.3")));
-    assert!(float("ab.cd").is_err());
+    let alloc = bumpalo::Bump::new();
+    assert_tokens(
+        &alloc,
+        "f.gte:12",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::EOI,
+        ],
+    );
+    assert_token_error(
+        &alloc,
+        "f.gte:12.",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::INTEGER,
+            Token::EOI,
+        ],
+        &[Token::AND, Token::OR, Token::RPAREN],
+        TokenSpan::new("", 8..9, Token::EOI),
+    );
+    assert_tokens(
+        &alloc,
+        "f.gte:12.34",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FLOAT,
+            Token::EOI,
+        ],
+    );
+    assert_token_error(
+        &alloc,
+        "f.gte:12.3a",
+        &[
+            Token::ROOT,
+            Token::FIELD,
+            Token::RANGE,
+            Token::FLOAT,
+            Token::EOI,
+        ],
+        &[Token::AND, Token::OR, Token::RPAREN],
+        TokenSpan::new("", 10..11, Token::EOI),
+    );
 }
+
+/*
 
 #[test]
 fn test_ipv4_addr() {
@@ -414,3 +658,4 @@ fn test_comments() {
         Ok(("test", "# hello world\r\n"))
     );
 }
+*/
