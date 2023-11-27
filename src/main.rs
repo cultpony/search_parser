@@ -25,6 +25,9 @@ pub struct App {
     optimizer: Optimizer,
     #[clap(long = "debug-memory", short = 'm')]
     output_memory_usage: bool,
+    #[clap(long, short)]
+    /// The argument is a file to read the search term from instead. If it's "-", read from stdin.
+    file: bool,
 }
 
 #[derive(Debug, clap::ValueEnum, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -40,15 +43,10 @@ pub enum Optimizer {
 
 #[derive(Debug, clap::ValueEnum, Default, Clone, Copy)]
 pub enum TokenizerMode {
-    #[clap(name = "dlln")]
-    /// A LLN(n) Parser with adaptive Lookahead (Perfect Accuracy, Slower)
-    DynamicLLN,
     #[clap(name = "fsm")]
     #[default]
-    /// A Finite State Machine Tokenizer (Permissive, Faster)
+    /// A Finite State Machine Tokenizer (deterministic, O(n) runtime)
     FiniteStateMachine,
-    #[clap(name = "sr")]
-    ShiftReduce,
 }
 
 #[derive(Debug, clap::ValueEnum, Default, Clone, Copy)]
@@ -79,13 +77,8 @@ pub enum OutputType {
 
 fn main() {
     let app = App::parse();
-    // DLLN takes a lot of memory to work, so this is probably a good guess for everything else
-    let memory_estimate = search_parser::tokenizers::dlln::maximum_memory_estimate(&app.term);
-    let alloc = Bump::with_capacity(memory_estimate);
+    let alloc = Bump::new();
     let input_size = app.term.as_bytes().len();
-    if app.output_memory_usage {
-        println!("EST:     {:8>} Bytes ( {:4>} Bytes per Character )", memory_estimate, memory_estimate / input_size);
-    }
     let alloc_debug = |alloc: &Bump| {
         if app.output_memory_usage {
             let alloced = alloc.allocated_bytes();
@@ -97,16 +90,19 @@ fn main() {
             }
         }
     };
+    let term = if app.file {
+        let st = std::fs::read_to_string(app.term).unwrap();
+        println!("loaded file ({} bytes)", st.len());
+        st
+    } else {
+        app.term
+    };
     match app.output {
         OutputType::ElasticsearchQuery => {
             let tree = match app.tokenizer {
                 TokenizerMode::FiniteStateMachine => search_parser::parse_string::<
                     search_parser::tokenizers::fsm::AllocTokenizer,
-                >(&alloc, &app.term, app.optimizer >= Optimizer::SimpleTreeFoldingAndPruning),
-                TokenizerMode::DynamicLLN => search_parser::parse_string::<
-                    search_parser::tokenizers::dlln::Tokenizer,
-                >(&alloc, &app.term, app.optimizer >= Optimizer::SimpleTreeFoldingAndPruning),
-                TokenizerMode::ShiftReduce => todo!(),
+                >(&alloc, &term, app.optimizer >= Optimizer::SimpleTreeFoldingAndPruning),
             };
             let out: ElasticTerm = tree.into();
             alloc_debug(&alloc);
@@ -115,16 +111,9 @@ fn main() {
         OutputType::TokenSequence => {
             let tokens = match app.tokenizer {
                 TokenizerMode::FiniteStateMachine => {
-                    let t = search_parser::tokenizers::fsm::AllocTokenizer::new(&alloc, &app.term);
+                    let t = search_parser::tokenizers::fsm::AllocTokenizer::new(&alloc, &term);
                     t.tokens().unwrap()
                 }
-                TokenizerMode::DynamicLLN => {
-                    let t = search_parser::tokenizers::dlln::Tokenizer::new(&alloc, &app.term);
-                    t.tokens().unwrap()
-                }
-                TokenizerMode::ShiftReduce => {
-                    todo!("implement AST -> Token Sequence")
-                },
             };
             alloc_debug(&alloc);
             println!("{:#?}", tokens);
@@ -132,14 +121,9 @@ fn main() {
         OutputType::Spans => {
             let tokens = match app.tokenizer {
                 TokenizerMode::FiniteStateMachine => {
-                    let t = search_parser::tokenizers::fsm::AllocTokenizer::new(&alloc, &app.term);
+                    let t = search_parser::tokenizers::fsm::AllocTokenizer::new(&alloc, &term);
                     t.token_spans().unwrap()
                 }
-                TokenizerMode::DynamicLLN => {
-                    let t = search_parser::tokenizers::dlln::Tokenizer::new(&alloc, &app.term);
-                    t.token_spans().unwrap()
-                }
-                TokenizerMode::ShiftReduce => todo!("implement AST -> Spans"),
             };
             alloc_debug(&alloc);
             println!("{:#?}", tokens);
@@ -148,12 +132,7 @@ fn main() {
             let tree = match app.tokenizer {
                 TokenizerMode::FiniteStateMachine => search_parser::parse_string::<
                     search_parser::tokenizers::fsm::AllocTokenizer,
-                >(&alloc, &app.term, app.optimizer >= Optimizer::SimpleTreeFoldingAndPruning),
-                TokenizerMode::DynamicLLN => search_parser::parse_string::<
-                    search_parser::tokenizers::dlln::Tokenizer,
-                >(&alloc, &app.term, app.optimizer >= Optimizer::SimpleTreeFoldingAndPruning),
-                TokenizerMode::ShiftReduce => search_parser::tokenizers::lalr::parse(&app.term),
-                    
+                >(&alloc, &term, app.optimizer >= Optimizer::SimpleTreeFoldingAndPruning),
             };
             alloc_debug(&alloc);
             println!("{:#?}", tree);

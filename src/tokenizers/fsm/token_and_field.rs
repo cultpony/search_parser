@@ -1,4 +1,4 @@
-use std::{iter::{Peekable, Enumerate}, str::Chars};
+use std::{iter::{Peekable, Enumerate, Zip}, str::{Chars, CharIndices}};
 
 use tracing::trace;
 
@@ -19,8 +19,8 @@ impl<'a> TagLexem<'a> {
     pub fn find_end(self) -> usize {
         let inp = self.0.0;
         let eot = self.0.find_end();
-        if let Some(field_char) = inp.chars().nth(eot) {
-            if field_char != '.' {
+        if let Some(field_char) = inp.bytes().nth(eot) {
+            if field_char != b'.' {
                 trace!("didn't find field dot, is tag");
                 return eot
             }
@@ -48,8 +48,8 @@ impl<'a> FieldLexem<'a> {
     pub fn find_end(self) -> usize {
         let inp = self.0.0;
         let eot = self.0.find_end();
-        if let Some(field_char) = inp.chars().nth(eot) {
-            if field_char == '.' {
+        if let Some(field_char) = inp.bytes().nth(eot) {
+            if field_char == b'.' {
                 trace!("found field dot, is field, not tag");
                 return eot + 1
             }
@@ -71,7 +71,7 @@ const fn is_single_char_termination(c: char) -> bool {
     )
 }
 
-type CList<'q> = Peekable<Enumerate<Chars<'q>>>;
+type CList<'q> = Peekable<CharIndices<'q>>;
 
 impl<'a> FieldOrTagLexem<'a> {
     pub const fn new(data: &'a str) -> Self {
@@ -86,8 +86,8 @@ impl<'a> FieldOrTagLexem<'a> {
 
     pub fn find_end(self) -> usize {
         let odata = self.0;
-        let data_size = odata.chars().count();
-        let data: &mut CList = &mut odata.chars().enumerate().peekable();
+        let data_size = odata.bytes().count();
+        let data: &mut CList = &mut odata.char_indices().peekable();
         let cret = |data_size| {
             trace!("found termination at {data_size}");
             let data = &odata[..data_size];

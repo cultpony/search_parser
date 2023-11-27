@@ -90,7 +90,15 @@ impl<'a> ShiftReduce<'a> {
 
             [.., TokenOrExpr::Expr(a), TokenOrExpr::Token(TokenSpan {
                 token: Token::AND, ..
+            }), TokenOrExpr::Expr(b)]  if *a == *b => a.clone(),
+
+            [.., TokenOrExpr::Expr(a), TokenOrExpr::Token(TokenSpan {
+                token: Token::AND, ..
             }), TokenOrExpr::Expr(b)] => Expr::Combine(CombOp::And, vec![a.clone(), b.clone()]),
+
+            [.., TokenOrExpr::Expr(a), TokenOrExpr::Token(TokenSpan {
+                token: Token::OR, ..
+            }), TokenOrExpr::Expr(b)] if *a == *b => a.clone(),
 
             [.., TokenOrExpr::Expr(a), TokenOrExpr::Token(TokenSpan {
                 token: Token::OR, ..
