@@ -1,43 +1,50 @@
-use std::marker::PhantomData;
 use std::str::FromStr;
 
 use crate::ast::{Expr, CombOp, Value, Comp};
-use crate::ITokenizer;
-use bumpalo::Bump;
+use crate::errors;
+use crate::span::TokenSpan;
+use crate::tokenizers::ITokenizer;
+
+use super::IParserFactory;
 
 pub type ExprNodeRef = Box<Expr>;
-pub type ExprNodeList = Vec<ExprNodeRef>;
 
-pub struct Parser<'a, 'bump, T>
-where
-    'a: 'bump,
-    T: ITokenizer<'a, 'bump>,
+inventory::submit! { super::Parser::new::<ParserFactory>("recdec") }
+
+pub struct ParserFactory;
+
+impl super::IParserFactory for ParserFactory {
+    fn init() -> Box<dyn IParserFactory> where Self: Sized {
+        Box::new(Self)
+    }
+
+    fn new(&self, tokenizer: Box<dyn ITokenizer>) -> errors::Result<Box<dyn super::IParser>> {
+        Ok(Box::new(Parser::new(tokenizer)))
+    }
+}
+pub struct Parser
 {
-    alloc: &'bump Bump,
     tree: ExprNodeRef,
-    tokenizer: T,
-    _p: PhantomData<&'a ()>,
+    tokenizer: Box<dyn ITokenizer>,
 }
 
-impl<'a, 'bump, T> Parser<'a, 'bump, T>
-where
-    'a: 'bump,
-    T: ITokenizer<'a, 'bump>,
-{
-    pub fn new(input: &'a str, alloc: &'bump Bump) -> Self {
-        Self {
-            alloc,
-            tree: Box::new(Expr::default()),
-            tokenizer: T::new(alloc, input),
-            _p: PhantomData,
-        }
+impl super::IParser for Parser {
+    fn produce_tree(&mut self) -> errors::Result<Expr> {
+        self.generate_primitive_ast(true)?;
+        Ok((*self.tree).clone())
     }
+    fn produce_token_sequence(&mut self) -> errors::Result<Vec<TokenSpan>> {
+        self.tokenizer.token_spans()
+    }
+}
 
-    pub fn tree(&self) -> &ExprNodeRef {
-        &self.tree
-    }
-    pub fn into_tree(self) -> Expr {
-        *self.tree
+impl Parser
+{
+    pub fn new(tokenizer: Box<dyn ITokenizer>) -> Self {
+        Self {
+            tree: Box::new(Expr::default()),
+            tokenizer,
+        }
     }
     /// Parses the token stream into an AST without any optimizations
     ///
@@ -45,7 +52,7 @@ where
     /// and empty syntax tree.
     #[tracing::instrument(skip(self))]
     pub fn generate_primitive_ast(&mut self, eoi_fold: bool) -> crate::errors::Result<()> {
-        let result = self.tokenizer.clone().token_spans()?;
+        let result = self.tokenizer.token_spans()?;
         // when building the AST, we may decend into recursively trying to solve
         // groups or large AND connections. This space allows the parser to save
         // existing progress before diving deeper without having to be actually recursive

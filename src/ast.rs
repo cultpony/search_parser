@@ -7,7 +7,6 @@ use crate::{tokens::Token, span::TokenSpan};
 pub type Field = String;
 pub type Tag = String;
 pub type TagList = Vec<Tag>;
-pub type ExprList = Vec<Expr>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -48,8 +47,8 @@ pub enum Value {
     Undefined,
 }
 
-impl<'a> From<TokenSpan<'a>> for Value {
-    fn from(value: TokenSpan<'a>) -> Self {
+impl<'a> From<TokenSpan> for Value {
+    fn from(value: TokenSpan) -> Self {
         match value.token() {
             Token::FLOAT => Self::Float(value.str().parse().unwrap()),
             Token::INTEGER => Self::Integer(value.str().parse().unwrap()),
@@ -81,6 +80,7 @@ pub enum Comp {
     GreaterThanOrEqual,
     Equal,
     NotEqual,
+    Contains,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

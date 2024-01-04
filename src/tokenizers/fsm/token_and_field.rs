@@ -1,4 +1,4 @@
-use std::{iter::{Peekable, Enumerate, Zip}, str::{Chars, CharIndices}};
+use std::{iter::Peekable, str::CharIndices};
 
 use tracing::trace;
 
@@ -10,6 +10,7 @@ impl<'a> TagLexem<'a> {
         Self(FieldOrTagLexem::new(data))
     }
 
+    #[cfg(test)]
     pub fn find_end_str(self) -> &'a str {
         let e = self.0;
         let q = self.find_end();
@@ -39,6 +40,7 @@ impl<'a> FieldLexem<'a> {
         Self(FieldOrTagLexem::new(data))
     }
 
+    #[cfg(test)]
     pub fn find_end_str(self) -> &'a str {
         let e = self.0.0;
         let q = self.find_end();
@@ -78,6 +80,7 @@ impl<'a> FieldOrTagLexem<'a> {
         Self(data)
     }
 
+    #[cfg(test)]
     pub fn find_end_str(self) -> &'a str {
         let e = self.0;
         let q = self.find_end();

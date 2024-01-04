@@ -1,9 +1,12 @@
-use bumpalo::collections::CollectIn;
+use std::rc::Rc;
+
 use tracing::trace;
 
-use crate::{span::TokenSpan, tokens::Token, ITokenizer};
+use crate::{span::TokenSpan, tokens::Token};
 
 use self::state_machine::StateMachine;
+
+use super::{ITokenizerFactory, ITokenizer};
 
 pub mod comp;
 pub mod data;
@@ -11,6 +14,21 @@ pub mod infix;
 pub mod prefix;
 pub mod state_machine;
 pub mod token_and_field;
+
+inventory::submit! { crate::tokenizers::Tokenizer::new::<FSMFactory>("fsm") }
+
+#[derive(Clone, Copy, Debug)]
+pub struct FSMFactory;
+
+impl ITokenizerFactory for FSMFactory {
+    fn init() -> Box<dyn ITokenizerFactory> {
+        Box::new(Self)
+    }
+
+    fn new(&self, input: std::rc::Rc<str>) -> Box<dyn ITokenizer> {
+        Box::new(Tokenizer::new(input))
+    }
+}
 
 pub trait FSM: Default + Copy + Clone + PartialEq + Eq + FSMStateMatcher {
     type NextStateType: FSM + Default + Copy + Clone + PartialEq + Eq + std::fmt::Debug;
@@ -43,15 +61,15 @@ pub trait FSMStateMatcher: Copy + Clone + PartialEq + Eq {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Tokenizer<'a> {
-    pub inp: &'a str,
+#[derive(Clone, Debug)]
+pub struct Tokenizer {
+    pub inp: Rc<str>,
     pub position: usize,
     pub state: StateMachine,
 }
 
-impl<'a> Tokenizer<'a> {
-    pub fn new(inp: &'a str) -> Self {
+impl Tokenizer {
+    pub fn new(inp: Rc<str>) -> Self {
         Self {
             inp,
             position: 0,
@@ -61,7 +79,7 @@ impl<'a> Tokenizer<'a> {
     /// Tries to get the next token in the input or returns None if no possible
     /// token can match the remainder of the input
     #[tracing::instrument(skip_all)]
-    pub fn step(&mut self) -> Option<TokenSpan<'a>> {
+    pub fn step(&mut self) -> Option<TokenSpan> {
         // Check if we're at the end and escape hatch out
         if self.state == StateMachine::EndOfInput {
             return None;
@@ -70,7 +88,7 @@ impl<'a> Tokenizer<'a> {
             trace!("Attempting to transition: {:?} -> {next:?}", self.state);
             if let Some(chars) = next.matches(&self.inp[self.position..]) {
                 let mut span = TokenSpan::new(
-                    self.inp,
+                    self.inp.clone(),
                     self.position..self.position + (chars as usize),
                     next.to_token(),
                 );
@@ -106,18 +124,15 @@ impl<'a> Tokenizer<'a> {
         None
     }
 
-    #[tracing::instrument(skip(self, bump))]
+    #[tracing::instrument(skip(self))]
     pub fn scan_until_none<'bump>(
         &mut self,
-        bump: &'bump bumpalo::Bump,
-    ) -> bumpalo::collections::Vec<'bump, TokenSpan<'a>>
-    where
-        'a: 'bump,
+    ) -> Vec<TokenSpan>
     {
-        let mut out = bumpalo::collections::Vec::new_in(bump);
+        let mut out = Vec::new();
 
         // insert the start state token
-        out.push(TokenSpan::new(self.inp, 0..self.inp.len(), Token::ROOT));
+        out.push(TokenSpan::new(self.inp.clone(), 0..self.inp.len(), Token::ROOT));
 
         while let Some(token_span) = self.step() {
             out.push(token_span)
@@ -127,53 +142,21 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct AllocTokenizer<'a, 'bump>
-where
-    'a: 'bump,
-{
-    tokenizer: Tokenizer<'a>,
-    bump: &'bump bumpalo::Bump,
-}
-
-impl<'a, 'bump> AllocTokenizer<'a, 'bump>
-where
-    'a: 'bump,
-{
-    pub fn scan_until_none(&mut self) -> bumpalo::collections::Vec<'bump, TokenSpan<'a>> {
-        self.tokenizer.scan_until_none(self.bump)
-    }
-}
-
-pub fn tokenize<'a, 'bump>(
-    inp: &'a str,
-    alloc: &'bump bumpalo::Bump,
-) -> bumpalo::collections::Vec<'bump, TokenSpan<'a>>
-where
-    'a: 'bump,
-{
-    Tokenizer::new(inp).scan_until_none(alloc)
-}
-
-impl<'a, 'bump> ITokenizer<'a, 'bump> for AllocTokenizer<'a, 'bump> {
-    fn new(alloc: &'bump bumpalo::Bump, input: &'a str) -> Self {
-        let t = Tokenizer::new(input);
-        Self {
-            tokenizer: t,
-            bump: alloc,
-        }
+impl ITokenizer for Tokenizer {
+    fn new(input: Rc<str>) -> Box<dyn ITokenizer> {
+        Box::new(Tokenizer::new(input))
     }
 
     fn token_spans(
-        mut self,
-    ) -> Result<bumpalo::collections::Vec<'bump, TokenSpan<'bump>>, crate::errors::Error<'bump>> {
+        &mut self,
+    ) -> Result<Vec<TokenSpan>, crate::errors::Error> {
         let res = self.scan_until_none();
-        if self.tokenizer.state != StateMachine::EndOfInput {
+        if self.state != StateMachine::EndOfInput {
             Err(crate::errors::Error::ExpectedDifferentTokens(
-                self.tokenizer.state.next_states().into_iter()
+                self.state.next_states().into_iter()
                     .map(|x| x.to_token())
-                    .collect_in(self.bump),
-                TokenSpan::new(self.tokenizer.inp, self.tokenizer.position..self.tokenizer.inp.len(), Token::EOI)
+                    .collect(),
+                TokenSpan::new(self.inp.clone(), self.position..self.inp.len(), Token::EOI)
             ))
         } else {
             Ok(res)
@@ -183,30 +166,30 @@ impl<'a, 'bump> ITokenizer<'a, 'bump> for AllocTokenizer<'a, 'bump> {
 
 #[cfg(test)]
 mod test {
-    use crate::{span::TokenSpan, tokens::Token, tokenspan_to_token};
+    use std::rc::Rc;
+
+    use crate::{span::TokenSpan, tokens::Token, tokenizers::tokenspan_to_token};
 
     use super::Tokenizer;
-    use bumpalo::vec;
     use tracing::trace;
 
     #[test]
     #[tracing_test::traced_test]
     pub fn test_empty() {
-        let input = "";
-        let alloc = bumpalo::Bump::new();
-        let token_spans = Tokenizer::new(input).scan_until_none(&alloc);
+        let input: Rc<str> = Rc::from("");
+        let token_spans = Tokenizer::new(input.clone()).scan_until_none();
         let tokens = tokenspan_to_token(&token_spans);
 
         assert_eq!(
-            vec![in &alloc; Token::ROOT, Token::EOI],
+            vec![Token::ROOT, Token::EOI],
             tokens,
             "Empty tokens match empty token sequence"
         );
 
         assert_eq!(
-            vec![in &alloc;
-                TokenSpan::new(input, 0..0, Token::ROOT),
-                TokenSpan::new(input, 0..0, Token::EOI),
+            vec![
+                TokenSpan::new(input.clone(), 0..0, Token::ROOT),
+                TokenSpan::new(input.clone(), 0..0, Token::EOI),
             ],
             token_spans,
             "Token Span positions correct"
@@ -216,22 +199,21 @@ mod test {
     #[test]
     #[tracing_test::traced_test]
     pub fn test_tag() {
-        let input = "hello";
-        let alloc = bumpalo::Bump::new();
-        let token_spans = Tokenizer::new(input).scan_until_none(&alloc);
+        let input: Rc<str> = Rc::from("hello");
+        let token_spans = Tokenizer::new(input.clone()).scan_until_none();
         let tokens = tokenspan_to_token(&token_spans);
 
         assert_eq!(
-            vec![in &alloc; Token::ROOT, Token::TAG, Token::EOI],
+            vec![Token::ROOT, Token::TAG, Token::EOI],
             tokens,
             "Empty tokens match empty token sequence"
         );
 
         assert_eq!(
-            vec![in &alloc;
-                TokenSpan::new(input, 0..5, Token::ROOT),
-                TokenSpan::new(input, 0..5, Token::TAG),
-                TokenSpan::new(input, 5..5, Token::EOI),
+            vec![
+                TokenSpan::new(input.clone(), 0..5, Token::ROOT),
+                TokenSpan::new(input.clone(), 0..5, Token::TAG),
+                TokenSpan::new(input.clone(), 5..5, Token::EOI),
             ],
             token_spans,
             "Token Span positions correct"
@@ -241,13 +223,12 @@ mod test {
     #[test]
     #[tracing_test::traced_test]
     pub fn test_field() {
-        let input = "hello.gte:10";
-        let alloc = bumpalo::Bump::new();
-        let token_spans = Tokenizer::new(input).scan_until_none(&alloc);
+        let input: Rc<str> = Rc::from("hello.gte:10");
+        let token_spans = Tokenizer::new(input.clone()).scan_until_none();
         let tokens = tokenspan_to_token(&token_spans);
 
         assert_eq!(
-            vec![in &alloc;
+            vec![
               Token::ROOT,
               Token::FIELD,
               Token::RANGE,
@@ -259,12 +240,12 @@ mod test {
         );
 
         assert_eq!(
-            vec![in &alloc;
-                TokenSpan::new(input, 0..12, Token::ROOT),
-                TokenSpan::new(input, 0..6, Token::FIELD),
-                TokenSpan::new(input, 6..10, Token::RANGE),
-                TokenSpan::new(input, 10..12, Token::INTEGER),
-                TokenSpan::new(input, 12..12, Token::EOI),
+            vec![
+                TokenSpan::new(input.clone(), 0..12, Token::ROOT),
+                TokenSpan::new(input.clone(), 0..6, Token::FIELD),
+                TokenSpan::new(input.clone(), 6..10, Token::RANGE),
+                TokenSpan::new(input.clone(), 10..12, Token::INTEGER),
+                TokenSpan::new(input.clone(), 12..12, Token::EOI),
             ],
             token_spans,
             "Token Span positions correct"
@@ -274,14 +255,13 @@ mod test {
     #[test]
     #[tracing_test::traced_test]
     pub fn test_complex_expr() {
-        let input = "(((field.gte:1000)AND data.neq:20)||bla.gte:100.2,tag),test.lte:-10,tag";
-        let alloc = bumpalo::Bump::new();
-        let token_spans = Tokenizer::new(input).scan_until_none(&alloc);
+        let input: Rc<str> = Rc::from("(((field.gte:1000)AND data.neq:20)||bla.gte:100.2,tag),test.lte:-10,tag");
+        let token_spans = Tokenizer::new(input.clone()).scan_until_none();
         trace!("{token_spans:#?}");
         let tokens = tokenspan_to_token(&token_spans);
 
         assert_eq!(
-            vec![in &alloc;
+            vec![
               Token::ROOT,
               Token::LPAREN,
               Token::LPAREN,

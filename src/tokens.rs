@@ -1,5 +1,3 @@
-use regex::Regex;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -96,7 +94,7 @@ impl Token {
             Token::ROOT => "Start of Input",
         }
     }
-    pub fn next_sequence(&self) -> &'static [Token] {
+    /*pub fn next_sequence(&self) -> &'static [Token] {
         use Token::*;
         const EXPR_TERMINATOR: &[Token] = &[AND, OR, RPAREN];
         const NEW_EXPR: &[Token] = &[LPAREN, NOT, BOOST, FUZZ, FIELD];
@@ -165,9 +163,9 @@ impl Token {
             Token::NONE => None,
             Token::ROOT => None,
         }
-    }
+    }*/
 
-    pub fn token_regex(self) -> Option<&'static Regex> {
+    /*pub fn token_regex(self) -> Option<&'static Regex> {
         lazy_static::lazy_static! {
             static ref FLOAT: Regex = Regex::new(r"(?P<float>^[+-]{0,1}\d+\.\d+)").unwrap();
             static ref INTEGER: Regex = Regex::new(r"(?P<int>^[+-]{0,1}\d+)").unwrap();
@@ -202,5 +200,5 @@ impl Token {
             ]),
             _ => None,
         }
-    }
+    }*/
 }

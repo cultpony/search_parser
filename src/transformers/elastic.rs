@@ -1,6 +1,41 @@
 use std::collections::HashMap;
 
-use search_parser::ast::{Expr, ApplyOp, Comp, CombOp, Value};
+use crate::{ast::{Expr, ApplyOp, Comp, CombOp, Value}, errors};
+
+use super::{ITransformerFactory, ITransformer};
+
+inventory::submit! { super::Transformer::new::<ElasticFactory>("esq") }
+
+#[derive(Debug, Clone, Copy)]
+pub struct ElasticFactory;
+
+impl ITransformerFactory for ElasticFactory {
+    fn init() -> Box<dyn ITransformerFactory> where Self: Sized {
+        Box::new(Self)
+    }
+
+    fn new(&self, parser: Box<dyn crate::parsers::IParser>) -> errors::Result<Box<dyn super::ITransformer>> {
+        Ok(ElasticTermProducer::new(parser)?)
+    }
+}
+
+pub struct ElasticTermProducer { parser: Box<dyn crate::parsers::IParser> }
+
+impl super::ITransformer for ElasticTermProducer {
+    fn new(parser: Box<dyn crate::parsers::IParser>) -> errors::Result<Box<dyn super::ITransformer>> where Self: Sized {
+        Ok(Box::new(Self{ parser }))
+    }
+
+    fn run(&mut self, mut output: Box<dyn std::io::Write>) -> errors::Result<()> {
+        let expr = self.parser.produce_tree()?;
+        let et = ElasticTerm::from(expr);
+        let ets = serde_json::to_string_pretty(&et)?;
+        let mut ets = std::io::Cursor::new(ets.as_bytes());
+        std::io::copy(&mut ets, &mut output)?;
+        output.write_all(&[b'\n'])?;
+        Ok(())
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ElasticTerm {

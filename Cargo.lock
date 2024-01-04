@@ -18,15 +18,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "allocator-api2"
-version = "0.2.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "anes"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,9 +139,6 @@ name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f30e7476521f6f8af1a1c4c0b8cc94f0bee37d91763d0ca2665f299b6cd8aec"
-dependencies = [
- "allocator-api2",
-]
 
 [[package]]
 name = "cast"
@@ -579,6 +567,12 @@ dependencies = [
  "equivalent",
  "hashbrown",
 ]
+
+[[package]]
+name = "inventory"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8573b2b1fb643a372c73b23f4da5f888677feef3305146d68a539250a9bccc7"
 
 [[package]]
 name = "ip_network"
@@ -1142,11 +1136,10 @@ dependencies = [
 name = "search_parser"
 version = "0.1.0"
 dependencies = [
- "allocator-api2",
- "bumpalo",
  "clap",
  "criterion",
  "fake",
+ "inventory",
  "ip_network",
  "itertools 0.11.0",
  "lalrpop",
