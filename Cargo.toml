@@ -20,11 +20,7 @@ ip_network = { version = "0.4.1", features = ["serde"] }
 clap = { version = "4.4.2", features = ["derive"] }
 itertools = "0.11.0"
 ureq = { version = "2.8.0", features = ["json"] }
-lalrpop-util = { version = "0.20", features = ["lexer", "unicode"] }
 inventory = "0.3.14"
-
-[build-dependencies]
-lalrpop = "0.20"
 
 [dev-dependencies]
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
