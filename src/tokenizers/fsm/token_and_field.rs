@@ -11,6 +11,7 @@ impl<'a> TagLexem<'a> {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn find_end_str(self) -> &'a str {
         let e = self.0;
         let q = self.find_end();
@@ -41,6 +42,7 @@ impl<'a> FieldLexem<'a> {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn find_end_str(self) -> &'a str {
         let e = self.0.0;
         let q = self.find_end();
@@ -81,6 +83,7 @@ impl<'a> FieldOrTagLexem<'a> {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn find_end_str(self) -> &'a str {
         let e = self.0;
         let q = self.find_end();
