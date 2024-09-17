@@ -1,3 +1,5 @@
+mod ip_cidr;
+
 use regex::Regex;
 
 use super::FSMStateMatcher;

@@ -1,4 +1,5 @@
 pub mod errors;
+pub mod indexer;
 mod span;
 mod tokens;
 mod ast;
