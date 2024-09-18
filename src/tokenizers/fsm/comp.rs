@@ -11,6 +11,20 @@ pub enum Comparator {
     Contains,
 }
 
+impl Comparator {
+    const fn maximum_bound(self) -> Option<u8> {
+        Some(match self {
+            Comparator::GreaterThanOrEqual => "gte:".len(),
+            Comparator::GreaterThan => "gt:".len(),
+            Comparator::Equal => "eq:".len(),
+            Comparator::LessThan => "lt".len(),
+            Comparator::LessThanOrEqual => "lte:".len(),
+            Comparator::NotEqual => "neq:".len(),
+            Comparator::Contains => "has:".len(),
+        } as u8)
+    }
+}
+
 impl FSMStateMatcher for Comparator {
     fn matches(self, inp: &str) -> Option<u8> {
         match self {
@@ -80,14 +94,6 @@ impl FSMStateMatcher for Comparator {
     }
 
     fn maximum_bound(self) -> Option<u8> {
-        Some(match self {
-            Comparator::GreaterThanOrEqual => "gte:".len(),
-            Comparator::GreaterThan => "gt:".len(),
-            Comparator::Equal => "eq:".len(),
-            Comparator::LessThan => "lt".len(),
-            Comparator::LessThanOrEqual => "lte:".len(),
-            Comparator::NotEqual => "neq:".len(),
-            Comparator::Contains => "has:".len(),
-        } as u8)
+        Comparator::maximum_bound(self)
     }
 }

@@ -8,6 +8,10 @@ pub struct QuickMap<const U: u32> {
     store: patricia_tree::StringPatriciaMap<Entry>,
 }
 
+pub struct QuickIntMap<const U: u32> {
+    store: patricia_tree::GenericPatriciaMap<u32, Entry>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Entry {
     Allocated{ id: u32 },
@@ -117,7 +121,7 @@ impl<const U: u32> QuickMap<U> {
         };
         match entry {
             Entry::Tombstone { id } => {
-                drop(id);
+                let _= id;
                 self.store.insert(tag.as_ref(), Entry::Deallocated);
                 None
             },
