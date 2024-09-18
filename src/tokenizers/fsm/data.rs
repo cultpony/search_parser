@@ -1,4 +1,5 @@
 mod ip_cidr;
+mod ipv6_cidr;
 
 use regex::Regex;
 
