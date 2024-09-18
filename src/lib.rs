@@ -15,3 +15,5 @@ pub use parsers::parser;
 pub use parsers::parsers;
 pub use transformers::transformer;
 pub use transformers::transformers;
+
+pub use span::TokenSpan;
