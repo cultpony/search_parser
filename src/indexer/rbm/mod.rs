@@ -1,13 +1,53 @@
 mod map;
 
-use std::{marker::PhantomData};
-
-use nom::bytes::complete::tag;
-
 #[derive(Clone, PartialEq, Debug)]
 #[repr(transparent)]
-pub(self) struct TagObjectRelation<const T: usize, const O: usize> {
+struct TagObjectRelation<const T: usize, const O: usize> {
     bitmap: roaring::RoaringBitmap,
+}
+
+impl<const T: usize, const O: usize> Default for TagObjectRelation<T, O> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl<const T: usize, const O: usize> std::ops::BitAnd<Self> for TagObjectRelation<T, O> {
+    type Output = Self;
+
+    fn bitand(self, rhs: TagObjectRelation<T, O>) -> Self::Output {
+        Self {
+            bitmap: self.bitmap & rhs.bitmap
+        }
+    }
+}
+
+impl<const T: usize, const O:usize> std::ops::Not for TagObjectRelation<T, O> {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        self ^ Self::full()
+    }
+}
+
+impl<const T: usize, const O: usize> std::ops::BitOr for TagObjectRelation<T, O> {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self {
+            bitmap: self.bitmap | rhs.bitmap
+        }
+    }
+}
+
+impl<const T: usize, const O: usize> std::ops::BitXor for TagObjectRelation<T, O> {
+    type Output = Self;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self {
+            bitmap: self.bitmap ^ rhs.bitmap
+        }
+    }
 }
 
 impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
@@ -20,7 +60,7 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
     const TAG_MASK: u32 = (1<<(T+1))-1;
     const BIT_SIZE: usize = T+O;
 
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         let _ = Self::_NO_MORE_THAN_32_BITS;
         let _ = Self::_NEED_ATLEAST_32_BITS;
         Self {
@@ -28,10 +68,38 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
         }
     }
 
+    pub fn full() -> Self {
+        let _ = Self::_NO_MORE_THAN_32_BITS;
+        let _ = Self::_NEED_ATLEAST_32_BITS;
+        Self {
+            bitmap: roaring::RoaringBitmap::full(),
+        }
+    }
+
+    pub fn with_tag(tag: u32) -> Self {
+        let mut mask = roaring::RoaringBitmap::new();
+        mask.insert_range(
+            Self::tuple_to_id(tag, u32::MIN)
+            ..
+            Self::tuple_to_id(tag, u32::MAX )
+        );
+        Self { bitmap: mask }
+    }
+
+    pub fn with_obj(obj: u32) -> Self {
+        let mut mask = roaring::RoaringBitmap::new();
+        for i in 0..=Self::TAG_MASK {
+            mask.insert(Self::tuple_to_id(i, obj));
+        }
+        let mask = mask ^ roaring::RoaringBitmap::full();
+        Self { bitmap: mask }
+    }
+
     pub(self) const fn tuple_to_id(tag: u32, obj: u32) -> u32 {
         (tag & Self::TAG_MASK) << O | (obj & Self::OBJ_MASK)
     }
 
+    /// Returns a tuple of (tag, obj)
     pub(self) const fn id_to_tuple(id: u32) -> (u32, u32) {
         let tag = (id >> O) & Self::TAG_MASK;
         let obj = id & (Self::OBJ_MASK);
@@ -57,6 +125,18 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
     pub fn check(&self, tag: u32, object: u32) -> bool {
         let id = Self::tuple_to_id(tag, object);
         self.bitmap.contains(id)
+    }
+
+    /// Returns all objects in the relation
+    /// This operation is somewhat expensive compared to loading tags of an object
+    /// or looking for objects with a tag
+    pub fn objects(&self) -> Vec<u32> {
+        let mut result = roaring::RoaringBitmap::new();
+        for id in &self.bitmap {
+            let (_, obj) = Self::id_to_tuple(id);
+            result.insert(obj);
+        }
+        result.iter().collect()
     }
 
     /// Clear the Tag-Object association
@@ -151,7 +231,7 @@ mod test {
     #[tracing_test::traced_test]
     pub fn test_tor_insert() {
         type TOR = TagObjectRelation<8, 24>;
-        let mut tor = TOR::new();
+        let mut tor = TOR::empty();
 
         tor.set(0xDD, 0xFF_FF_FF);
         tor.set(0x00, 0x00_00_00);

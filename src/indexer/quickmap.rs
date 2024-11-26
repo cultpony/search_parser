@@ -1,15 +1,14 @@
 use std::collections::HashSet;
 
-
 // Allows mapping a string to an integer with a given number of bits at most used
 // U is the number of bits to be used
 #[derive(Clone, Debug)]
 pub struct QuickMap<const U: u32> {
-    store: patricia_tree::StringPatriciaMap<Entry>,
+    store: patricia_tree::GenericPatriciaMap<String, Entry>,
 }
 
 pub struct QuickIntMap<const U: u32> {
-    store: patricia_tree::GenericPatriciaMap<u32, Entry>,
+    store: patricia_tree::GenericPatriciaMap<Vec<u8>, Entry>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -35,10 +34,97 @@ impl Into<Option<u32>> for Entry {
     }
 }
 
+impl<const U: u32> QuickIntMap<U> {
+    const MAX_ID: u32 = (1<<(U+1))-1;
+
+    fn alloc_free_id(&self) -> Option<u32> {
+        let poss_free = (0..Self::MAX_ID).into_iter();
+        let mut values: HashSet<u32> = self.store.values()
+            .filter_map(Entry::as_option)
+            .collect();
+        let result = poss_free.filter(|x| {
+            if values.contains(x) {
+                values.remove(x);
+                true
+            } else {
+                false
+            }
+        }).next()?;
+        if result < Self::MAX_ID {
+            return Some(result)
+        }
+        return None
+    }
+
+    pub fn allocate(&mut self, tag: u32) -> Option<u32> {
+        let tag = tag.to_ne_bytes();
+
+        if let Some(entry) = self.store.get(tag) {
+            match entry {
+                Entry::Allocated { id } => return Some(*id),
+                Entry::Tombstone { id } => {
+                    let id = *id;
+                    self.store.insert(tag, Entry::Allocated { id });
+                    return Some(id)
+                },
+                Entry::Deallocated => {},
+            }
+        }
+        let Some(id) = self.alloc_free_id() else {
+            return None;
+        };
+        self.store.insert(tag, Entry::Allocated { id });
+        Some(id)
+    }
+
+    pub fn resolve(&self, tag: u32) -> Option<u32> {
+        let Some(entry) = self.store.get(tag.to_ne_bytes()) else {
+            return None
+        };
+        match entry {
+            Entry::Allocated { id } => Some(*id),
+            Entry::Tombstone { id: _ } => None,
+            Entry::Deallocated => None,
+        }
+    }
+
+    pub fn tombstone(&mut self, tag: u32) {
+        let tag = tag.to_ne_bytes();
+        let Some(entry) = self.store.get(tag) else {
+            return
+        };
+        match entry {
+            Entry::Allocated { id } => {
+                let id = *id;
+                self.store.insert(tag, Entry::Tombstone { id });
+            },
+            Entry::Tombstone { id: _ } => (),
+            Entry::Deallocated => (),
+        }
+    }
+
+    #[must_use = "must check if ID was not tombstoned"]
+    pub fn deallocate(&mut self, tag: u32) -> Option<u32> {
+        let tag = tag.to_ne_bytes();
+        let Some(entry) = self.store.get(tag) else {
+            return None
+        };
+        match entry {
+            Entry::Tombstone { id } => {
+                let _= id;
+                self.store.insert(tag, Entry::Deallocated);
+                None
+            },
+            Entry::Allocated { id } => Some(*id),
+            Entry::Deallocated => None,
+        }
+    }
+}
+
 impl<const U: u32> QuickMap<U> {
     const MAX_ID: u32 = (1<<(U+1))-1;
 
-    pub fn alloc_free_id(&self) -> Option<u32> {
+    fn alloc_free_id(&self) -> Option<u32> {
         let poss_free = (0..Self::MAX_ID).into_iter();
         let mut values: HashSet<u32> = self.store.values()
             .filter_map(Entry::as_option)
