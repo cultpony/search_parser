@@ -1,5 +1,6 @@
 mod rbm;
 mod quickmap;
+mod tib;
 
 /// TEOs are operations on the index that can be executed in a massively parallel fashion
 /// by allowing each bitmap index to operate independently
@@ -70,4 +71,40 @@ pub enum TORExprOperator {
     /// Note that this means when in OBJ mode, it returns TAG, if in TAG
     /// mode, it returns OBJ
     ExitWithRel{ rel: u32 },
+}
+
+// Represents a Multithreading Index that can insert, delete and search
+// for objects associated with a tag
+trait Index {
+    fn insert(&mut self, obj: u32, tag: u32) -> InsertResult;
+    /// Returns true if the object was deleted, false if no operation
+    /// took place
+    fn delete(&mut self, obj: u32, tag: u32) -> DeleteResult;
+    /// Returns if obj in this index
+    fn query_obj(&self, obj: u32) -> QueryResult;
+    /// Returns if tag in this index
+    fn query_tag(&self, tag: u32) -> QueryResult;
+    /// Returns relation
+    fn query_rel(&self, obj: u32, tag: u32) -> QueryResult;
+}
+
+pub enum InsertResult {
+    // Relation established
+    Inserted,
+    // Relation ignored
+    Ignored,
+}
+
+pub enum DeleteResult {
+    // Relation deleted
+    Deleted,
+    // Relation deletion ignored
+    Ignored,
+}
+
+pub enum QueryResult {
+    // Object or Tag found
+    Match,
+    // Object or Tag not found
+    NoMatch,
 }
