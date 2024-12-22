@@ -52,13 +52,13 @@ impl<const T: usize, const O: usize> std::ops::BitXor for TagObjectRelation<T, O
 
 impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
     // check we use no more than 32 bits
-    const _NO_MORE_THAN_32_BITS: usize = usize::MAX - (32 + T + O);
+    const _NO_MORE_THAN_32_BITS: u32 = u32::MAX - (32 + T + O);
     // check we use no less than 32 bits
-    const _NEED_ATLEAST_32_BITS: usize = usize::MAX + (32 - T - O);
+    const _NEED_ATLEAST_32_BITS: u32 = u32::MAX + (32 - T - O);
 
-    const OBJ_MASK: u32 = (1<<O)-1;
-    const TAG_MASK: u32 = (1<<(T+1))-1;
-    const BIT_SIZE: usize = T+O;
+    const OBJ_MASK: u32 = (1 << O) - 1;
+    const TAG_MASK: u32 = (1 << (T + 1)) - 1;
+    const BIT_SIZE: u32 = T + O;
 
     pub fn empty() -> Self {
         let _ = Self::_NO_MORE_THAN_32_BITS;
@@ -116,8 +116,8 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
 
     /// Create a tag-object relation
     pub fn set(&mut self, tag: u32, object: u32) {
-        assert!(tag < 1<<T);
-        assert!(object < 1<<O);
+        assert!(tag < 1 << T);
+        assert!(object < 1 << O);
         self.bitmap.insert(Self::tuple_to_id(tag, object));
     }
 
@@ -148,11 +148,7 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
     /// Remove tag from relation bitmap
     pub fn clear_tag(&mut self, tag: u32) {
         let mut mask = roaring::RoaringBitmap::new();
-        mask.insert_range(
-            Self::tuple_to_id(tag, u32::MIN)
-            ..
-            Self::tuple_to_id(tag, u32::MAX )
-        );
+        mask.insert_range(Self::tuple_to_id(tag, u32::MIN)..Self::tuple_to_id(tag, u32::MAX));
         let masked = (&self.bitmap) & mask;
         self.bitmap = masked;
     }
@@ -171,11 +167,7 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
     /// Returns the tagged objects
     pub fn tagged(&self, tag: u32) -> Vec<u32> {
         let mut mask = roaring::RoaringBitmap::new();
-        mask.insert_range(
-            Self::tuple_to_id(tag, u32::MIN)
-            ..
-            Self::tuple_to_id(tag, u32::MAX )
-        );
+        mask.insert_range(Self::tuple_to_id(tag, u32::MIN)..Self::tuple_to_id(tag, u32::MAX));
         let masked = (&self.bitmap) & mask;
         masked.iter().map(|x| Self::id_to_tuple(x).1).collect()
     }
@@ -193,14 +185,9 @@ impl<const T: usize, const O: usize> TagObjectRelation<T, O> {
     /// Counts how many objects a tag has
     pub fn tag_count(&self, tag: u32) -> u64 {
         let mut mask = roaring::RoaringBitmap::new();
-        mask.insert_range(
-            Self::tuple_to_id(tag, u32::MIN)
-            ..
-            Self::tuple_to_id(tag, u32::MAX)
-        );
+        mask.insert_range(Self::tuple_to_id(tag, u32::MIN)..Self::tuple_to_id(tag, u32::MAX));
         self.bitmap.intersection_len(&mask)
     }
-
 }
 
 #[cfg(test)]
@@ -212,16 +199,32 @@ mod test {
     pub fn test_id_mapping() {
         type TOR = TagObjectRelation<20, 12>;
         let tag_encoded = TOR::tuple_to_id(0x0FFFFF, 0);
-        assert_eq!(0xFFFF_F000, tag_encoded, "Found {:08x}, wanted {:08x}", tag_encoded, 0xFFFF_F000u32);
+        assert_eq!(
+            0xFFFF_F000, tag_encoded,
+            "Found {:08x}, wanted {:08x}",
+            tag_encoded, 0xFFFF_F000u32
+        );
 
         let tag_encoded = TOR::tuple_to_id(0xFFFFFF, 0);
-        assert_eq!(0xFFFF_F000, tag_encoded, "Found {:08x}, wanted {:08x}", tag_encoded, 0xFFFF_F000u32);
+        assert_eq!(
+            0xFFFF_F000, tag_encoded,
+            "Found {:08x}, wanted {:08x}",
+            tag_encoded, 0xFFFF_F000u32
+        );
 
         let obj_encoded = TOR::tuple_to_id(0, 0xFFF);
-        assert_eq!(0x0000_0FFF, obj_encoded, "Found {:08x}, wanted {:08x}", obj_encoded, 0x0000_0FFFu32);
+        assert_eq!(
+            0x0000_0FFF, obj_encoded,
+            "Found {:08x}, wanted {:08x}",
+            obj_encoded, 0x0000_0FFFu32
+        );
 
         let obj_encoded = TOR::tuple_to_id(0, 0xFFFF);
-        assert_eq!(0x0000_0FFF, obj_encoded, "Found {:08x}, wanted {:08x}", obj_encoded, 0x0000_0FFFu32);
+        assert_eq!(
+            0x0000_0FFF, obj_encoded,
+            "Found {:08x}, wanted {:08x}",
+            obj_encoded, 0x0000_0FFFu32
+        );
 
         let decoded = TOR::id_to_tuple(tag_encoded);
         assert_eq!((0xFFFFF, 0), decoded);
@@ -249,7 +252,11 @@ mod test {
             tor.set(0xEA, 0xA * i);
             tor.set(0x99, 0xA * i);
         }
-        info!("roaring bitmap with {} elements, using {} bytes", tor.len(), tor.bytes());
+        info!(
+            "roaring bitmap with {} elements, using {} bytes",
+            tor.len(),
+            tor.bytes()
+        );
         assert_eq!(tor.tag_count(0x1F) as usize, expected.len());
         let tagged = tor.tagged(0x1F);
         assert_eq!(tagged.len(), 0xFFFF);
