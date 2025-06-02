@@ -1,5 +1,8 @@
 pub mod errors;
+
+#[cfg(feature = "indexer")]
 pub mod indexer;
+
 mod span;
 mod tokens;
 mod ast;

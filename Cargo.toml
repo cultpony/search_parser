@@ -24,6 +24,7 @@ inventory = "0.3"
 roaring = { version = "0.10.6", features = [] }
 static_assertions = "1.1.0"
 patricia_tree = "0.8.0"
+elasticsearch-dsl = "0.4.23"
 
 [dev-dependencies]
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
@@ -33,6 +34,9 @@ fake = { version = "2.8.0", features = ["time", "uuid", "semver", "derive"] }
 rand = { version = "0.8.5", features = ["rand_chacha"] }
 rand_chacha = "0.3.1"
 proptest = "1.5.0"
+
+[features]
+indexer = []
 
 [[bench]]
 name = "tokenizer"

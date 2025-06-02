@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::ast::{CombOp, Comp};
+use crate::ast::{ApplyOp, CombOp, Comp};
 use crate::errors;
 use crate::tokens::Token;
 use crate::{ast::Expr, span::TokenSpan};
@@ -163,6 +163,10 @@ impl ShiftReduce {
             [rest @ .., TokenOrExpr::Expr(a), TokenOrExpr::Token(TokenSpan {
                 token: Token::OR, ..
             }), TokenOrExpr::Expr(b)] => (rest, Expr::Combine(CombOp::Or, vec![a.clone(), b.clone()])),
+
+            [rest @ .., TokenOrExpr::Token(TokenSpan {
+                token: Token::NOT, ..
+            }), TokenOrExpr::Expr(e) ] => (rest, Expr::Apply(ApplyOp::Not, e.clone().into())),
 
             [rest@.., TokenOrExpr::Token(
                 f @ TokenSpan {
