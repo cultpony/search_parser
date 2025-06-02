@@ -29,6 +29,21 @@ pub enum Expr {
     Empty,
 }
 
+impl Expr {
+    pub fn apply_op(&self) -> Option<ApplyOp> {
+        match self {
+            Expr::Apply(op, _) => Some(*op),
+            _ => None,
+        }
+    }
+    pub fn comb_op(&self) -> Option<CombOp> {
+        match self {
+            Expr::Combine(op, _) => Some(*op),
+            _ => None,
+        }
+    }
+}
+
 impl Default for Expr {
     fn default() -> Self {
         Expr::Group(Vec::new())

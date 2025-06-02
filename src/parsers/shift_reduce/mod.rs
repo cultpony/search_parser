@@ -209,6 +209,31 @@ impl ShiftReduce {
                 return None;
             }
 
+            // ===
+            // Below here we optimize the query by reducing nested operations and combining multiple tag mentions into a single Ast Node
+
+            [rest @ .., TokenOrExpr::Expr(Expr::Combine(CombOp::And, op))] if op.get(0).map(Expr::comb_op).flatten() == Some(CombOp::And) => {
+                let mut new_op = op.clone();
+                let old_op = new_op.remove(0);
+                let mut old_data = match old_op {
+                    Expr::Combine(CombOp::And, data) => data,
+                    _ => unreachable!()
+                };
+                new_op.append(&mut old_data);
+                (rest, Expr::Combine(CombOp::And, new_op))
+            }
+
+            [rest @ .., TokenOrExpr::Expr(Expr::Combine(CombOp::Or, op))] if op.get(0).map(Expr::comb_op).flatten() == Some(CombOp::Or) => {
+                let mut new_op = op.clone();
+                let old_op = new_op.remove(0);
+                let mut old_data = match old_op {
+                    Expr::Combine(CombOp::Or, data) => data,
+                    _ => unreachable!()
+                };
+                new_op.append(&mut old_data);
+                (rest, Expr::Combine(CombOp::Or, new_op))
+            }
+            
             _ => return None,
         };
         self.stack.truncate(rest.len());
